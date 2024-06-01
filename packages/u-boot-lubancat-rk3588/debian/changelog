@@ -1,0 +1,5 @@
+u-boot-lubancat-rk3588 (2017.09+20230711.gitddc91cd0-2) jammy; urgency=medium
+
+  * Squash u-boot source code into radxa package
+
+ -- Joshua Riek <jjriek@verizon.net>  Sat, 23 Dec 2023 19:27:47 -0500

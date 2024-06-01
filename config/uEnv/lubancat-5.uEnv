@@ -1,0 +1,59 @@
+overlays=rk3588-lubancat-5-hdmi0-overlay rk3588-lubancat-5-hdmi1-vp2-overlay
+
+# 正确的方法是将所有需要的设备树覆盖文件名列在一个overlays=后面，用空格分隔。例如：
+# 下面是为鲁班猫5使用两个覆盖层的示例:      
+# overlays=overlays=rk3588-lubancat-5-hdmi0-overlay rk3588-lubancat-5-hdmi1-vp2-overlay
+
+#40pin
+# rk3588-lubancat-i2c3-m0-overlay
+# rk3588-lubancat-i2c4-m3-overlay
+# rk3588-lubancat-uart3-m0-overlay
+# rk3588-lubancat-uart1-m1-overlay
+# rk3588-lubancat-spi0-m1-overlay
+# rk3588-lubancat-i2c8-m2-overlay
+# rk3588-lubancat-pwm0-m2-overlay
+# rk3588-lubancat-pwm1-m2-overlay
+# rk3588-lubancat-pwm13-m1-overlay
+# rk3588-lubancat-pwm13-m2-overlay
+# rk3588-lubancat-pwm14-m1-overlay
+# rk3588-lubancat-pwm14-m2-overlay
+# rk3588-lubancat-pwm15-ir-m3-overlay
+
+# 8k插件，开启之后vp0的hdmi0或者hdmi1能输出8k
+# rk3588-lubancat-5-hdmi-8k-overlay
+
+# vp0 （插件只能同时开一个）
+# rk3588-lubancat-5-hdmi0-overlay
+# rk3588-lubancat-5-hdmi1-vp0-overlay
+
+# vp1 （默认配置为dp0开启，打开设备树则关闭dp显示）
+# rk3588-lubancat-5-dp0-disabled-overlay
+
+# vp2 （插件只能同时开一个）
+# rk3588-lubancat-5-hdmi1-vp2-overlay
+# rk3588-lubancat-5-edp-overlay
+# rk3588-lubancat-5-dsi0-1080p-overlay
+# rk3588-lubancat-5-dsi0-800x1280-overlay
+# rk3588-lubancat-5-dsi0-1024x600-overlay
+
+# vp3 （插件只能同时开一个）
+# rk3588-lubancat-5-dsi1-1080p-overlay
+# rk3588-lubancat-5-dsi1-800x1280-overlay
+# rk3588-lubancat-5-dsi1-1024x600-overlay
+
+# cam0
+# rk3588-lubancat-5-cam0-imx415-overlay
+# cam1
+# rk3588-lubancat-5-cam1-imx415-overlay
+# cam2
+# rk3588-lubancat-5-cam2-imx415-overlay
+# rk3588-lubancat-5-cam2-ov8858-overlay
+# cam3
+# rk3588-lubancat-5-cam3-imx415-overlay
+# rk3588-lubancat-5-cam3-ov8858-overlay
+# cam4
+# rk3588-lubancat-5-cam4-imx415-overlay
+# rk3588-lubancat-5-cam4-ov8858-overlay
+# cam5
+# rk3588-lubancat-5-cam5-imx415-overlay
+# rk3588-lubancat-5-cam5-ov8858-overlay

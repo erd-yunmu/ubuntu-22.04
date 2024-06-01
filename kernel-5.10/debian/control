@@ -1,0 +1,25 @@
+Source: linux-rockchip-5.10
+Section: kernel
+Priority: optional
+Maintainer: Joshua Riek <jjriek@verizon.net>
+Standards-Version: 4.6.0
+Build-Depends: bc, rsync, kmod, cpio, build-essential, u-boot-tools, bison, python3 | python, python-is-python3 | python-is-python2, flex | flex:native , , libssl-dev:native
+Vcs-Git: https://github.com/Joshua-Riek/linux-rockchip.git
+
+Package: linux-image-5.10.198-rockchip
+Architecture: arm64
+Description: Linux kernel image for version 5.10.198 on arm64
+ This package contains the Linux kernel image for version 5.10.198 arm64.
+ .
+ You likely do not want to install this package directly. Instead, install
+ the linux-rockchip-5.10 meta-package, which will ensure that upgrades work
+ correctly, and that supporting packages are also installed.
+
+Package: linux-headers-5.10.198-rockchip
+Architecture: arm64
+Description: Linux kernel headers for version 5.10.198 on arm64
+ This package contains the Linux kernel headers for version 5.10.198 arm64.
+ .
+ You likely do not want to install this package directly. Instead, install
+ the linux-rockchip-5.10 meta-package, which will ensure that upgrades work
+ correctly, and that supporting packages are also installed.
