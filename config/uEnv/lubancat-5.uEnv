@@ -41,19 +41,16 @@ overlays=rk3588-lubancat-5-hdmi0-overlay rk3588-lubancat-5-hdmi1-vp2-overlay
 # rk3588-lubancat-5-dsi1-800x1280-overlay
 # rk3588-lubancat-5-dsi1-1024x600-overlay
 
-# cam0
+#cam0
 # rk3588-lubancat-5-cam0-imx415-overlay
-# cam1
+#cam1
 # rk3588-lubancat-5-cam1-imx415-overlay
-# cam2
-# rk3588-lubancat-5-cam2-imx415-overlay
+#cam2
 # rk3588-lubancat-5-cam2-ov8858-overlay
-# cam3
-# rk3588-lubancat-5-cam3-imx415-overlay
+#cam3
 # rk3588-lubancat-5-cam3-ov8858-overlay
-# cam4
-# rk3588-lubancat-5-cam4-imx415-overlay
+#cam4
 # rk3588-lubancat-5-cam4-ov8858-overlay
-# cam5
-# rk3588-lubancat-5-cam5-imx415-overlay
+#cam5
 # rk3588-lubancat-5-cam5-ov8858-overlay
+

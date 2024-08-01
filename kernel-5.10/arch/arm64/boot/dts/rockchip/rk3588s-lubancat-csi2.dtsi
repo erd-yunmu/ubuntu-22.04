@@ -12,6 +12,27 @@
 		#clock-cells = <0>;
 	};
 
+	ext_cam_25m_clk: external-camera-25m-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <25000000>;
+		clock-output-names = "ext_cam_25m_clk";
+		#clock-cells = <0>;
+	};
+
+	ext_cam_24m_clk: external-camera-24m-clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <24000000>;
+		clock-output-names = "ext_cam_24m_clk";
+	};
+
+	ext_cam_27m_clk: external-camera-27m-clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <27000000>;
+		clock-output-names = "ext_cam_27m_clk";
+	};
+
 	vdd_cam_5v: vdd-cam-5v-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vdd_cam_5v";
@@ -80,6 +101,26 @@
 			};
 		};
 	};
+
+	sc530ai_0: sc530ai-0@30 {
+		compatible = "smartsens,sc530ai";
+		status = "disabled";
+		reg = <0x30>;
+		clocks = <&ext_cam_24m_clk>;
+		clock-names = "xvclk";
+		pwdn-gpios = <&gpio1 RK_PA3 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio1 RK_PA4 GPIO_ACTIVE_HIGH>;
+		rockchip,camera-module-index = <0>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "CMK-OT2115-PC1";
+		rockchip,camera-module-lens-name = "30IRC-F16";
+		port {
+			sc530ai_out0: endpoint {
+				remote-endpoint = <&dcphy0_in_sc530ai>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
 };
 
 &mipi_dcphy0 {
@@ -101,6 +142,12 @@
 			dcphy0_in_imx415: endpoint@0 {
 				reg = <0>;
 				remote-endpoint = <&imx415_out0>;
+				data-lanes = <1 2 3 4>;
+			};
+
+			dcphy0_in_sc530ai: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&sc530ai_out0>;
 				data-lanes = <1 2 3 4>;
 			};
 		};
@@ -176,6 +223,26 @@
 			};
 		};
 	};
+
+	sc530ai_1: sc530ai-1@30 {
+		compatible = "smartsens,sc530ai";
+		status = "disabled";
+		reg = <0x30>;
+		clocks = <&ext_cam_24m_clk>;
+		clock-names = "xvclk";
+		pwdn-gpios = <&gpio4 RK_PA5 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio4 RK_PA6 GPIO_ACTIVE_HIGH>;
+		rockchip,camera-module-index = <1>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "CMK-OT2115-PC1";
+		rockchip,camera-module-lens-name = "30IRC-F16";
+		port {
+			sc530ai_out1: endpoint {
+				remote-endpoint = <&dcphy1_in_sc530ai>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
 };
 
 &mipi_dcphy1 {
@@ -197,6 +264,12 @@
 			dcphy1_in_imx415: endpoint@0 {
 				reg = <0>;
 				remote-endpoint = <&imx415_out1>;
+				data-lanes = <1 2 3 4>;
+			};
+
+			dcphy1_in_sc530ai: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&sc530ai_out1>;
 				data-lanes = <1 2 3 4>;
 			};
 		};
@@ -272,6 +345,26 @@
 			};
 		};
 	};
+
+	sc530ai_2: sc530ai-2@30 {
+		compatible = "smartsens,sc530ai";
+		status = "disabled";
+		reg = <0x30>;
+		clocks = <&ext_cam_24m_clk>;
+		clock-names = "xvclk";
+		pwdn-gpios = <&gpio4 RK_PA7 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio4 RK_PB2 GPIO_ACTIVE_HIGH>;
+		rockchip,camera-module-index = <2>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "CMK-OT2115-PC1";
+		rockchip,camera-module-lens-name = "30IRC-F16";
+		port {
+			sc530ai_out2: endpoint {
+				remote-endpoint = <&dphy0_in_sc530ai>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};		
 };
 
 &csi2_dphy0_hw {
@@ -293,6 +386,12 @@
 			dphy0_in_imx415: endpoint@0 {
 				reg = <0>;
 				remote-endpoint = <&imx415_out2>;
+				data-lanes = <1 2 3 4>;
+			};
+
+			dphy0_in_sc530ai: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&sc530ai_out2>;
 				data-lanes = <1 2 3 4>;
 			};
 		};

@@ -19,25 +19,22 @@
 
 //vp0
 // #include "rk3588-lubancat-5-hdmi1-vp0.dtsi"
-#include "rk3588-lubancat-5-hdmi0.dtsi"
+// #include "rk3588-lubancat-5-hdmi0.dtsi"
 
 //vp2 二选一
 // #include "rk3588-lubancat-5-dp1-edp_port.dtsi"
 // #include "rk3588-lubancat-5-hdmi1.dtsi"
 // #include "rk3588-lubancat-5-dsi0-ebf410125_1080p.dtsi"
 
-//vp3 
+//vp3
 // #include "rk3588-lubancat-5-dsi1-ebf410125_1080p.dtsi"
 
-#include "rk3588-lubancat-5-csi.dtsi"
-
-// #include "rk3588-lubancat-5-cam0-imx415.dtsi"
 // #include "rk3588-lubancat-5-cam1-imx415.dtsi"
-// #include "rk3588-lubancat-5-cam2-imx415.dtsi"
-// #include "rk3588-lubancat-5-cam3-imx415.dtsi"
-// #include "rk3588-lubancat-5-cam4-imx415.dtsi"
-// #include "rk3588-lubancat-5-cam5-imx415.dtsi"
-
+// #include "rk3588-lubancat-5-cam0-imx415.dtsi"
+// #include "rk3588-lubancat-5-cam2.dtsi"
+// #include "rk3588-lubancat-5-cam3.dtsi"
+// #include "rk3588-lubancat-5-cam4.dtsi"
+// #include "rk3588-lubancat-5-cam5.dtsi"
 
 / {
 	model = "Embedfire LubanCat-5";

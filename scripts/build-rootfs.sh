@@ -355,9 +355,9 @@ cp ${overlay_dir}/warty-final-ubuntu.png ${chroot_dir}/usr/share/backgrounds/war
 
 # Change startup logo
 mkdir -p  ${chroot_dir}/usr/share/plymouth/themes/spinner
-cp ${overlay_dir}/syslog.png ${chroot_dir}/usr/share/plymouth/themes/spinner/bgrt-fallback.png
-cp ${overlay_dir}/200x100.png ${chroot_dir}/usr/share/plymouth/ubuntu-logo.png
-cp ${overlay_dir}/280x280.png ${chroot_dir}/usr/share/pixmaps/ubuntu-logo-icon.png
+cp ${overlay_dir}/bgrt-fallback.png ${chroot_dir}/usr/share/plymouth/themes/spinner/bgrt-fallback.png
+cp ${overlay_dir}/ubuntu-logo.png ${chroot_dir}/usr/share/plymouth/ubuntu-logo.png
+cp ${overlay_dir}/ubuntu-logo-icon.png ${chroot_dir}/usr/share/pixmaps/ubuntu-logo-icon.png
 
 # Set chromium inital prefrences
 mkdir -p ${chroot_dir}/usr/lib/chromium-browser

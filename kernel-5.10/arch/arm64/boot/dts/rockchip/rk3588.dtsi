@@ -26,7 +26,11 @@
 		usbdp0 = &usbdp_phy0;
 		usbdp1 = &usbdp_phy1;
 	};
-
+	
+	system {
+		cpu,model = "Rockchip RK3588 (Cortex-A76 + Cortex-A55)";
+	};
+	
 	rkcif_mipi_lvds4: rkcif-mipi-lvds4 {
 		compatible = "rockchip,rkcif-mipi-lvds";
 		rockchip,hw = <&rkcif>;
