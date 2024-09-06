@@ -163,10 +163,10 @@ devio libavcodec-dev python3-opencv python3-pip python3-numpy python3-venv \
 python3-dev cloud-initramfs-growroot tree
 
 # Add embedfire kernel gpg
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://Embedfire.github.io/keyfile | gpg --dearmor -o /etc/apt/keyrings/embedfire.gpg
-chmod a+r /etc/apt/keyrings/embedfire.gpg
-echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/embedfire.gpg] https://cloud.embedfire.com/mirrors/ebf-debian carp-rk3588 main" | tee /etc/apt/sources.list.d/embedfire-carp-rk3588.list > /dev/null
+#mkdir -p /etc/apt/keyrings
+#curl -fsSL https://Embedfire.github.io/keyfile | gpg --dearmor -o /etc/apt/keyrings/embedfire.gpg
+#chmod a+r /etc/apt/keyrings/embedfire.gpg
+#echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/embedfire.gpg] https://cloud.embedfire.com/mirrors/ebf-debian carp-rk3588 main" | tee /etc/apt/sources.list.d/embedfire-carp-rk3588.list > /dev/null
 
 # Remove cryptsetup and needrestart
 apt-get -y remove cryptsetup needrestart

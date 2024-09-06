@@ -10,3 +10,8 @@ u-boot-rockchip_platforms += lubancat-5-rk3588
 lubancat-5-rk3588_ddr := rk3588_ddr_lp4_1560MHz_lp5_2736MHz_v1.15.bin
 lubancat-5-rk3588_bl31 := rk3588_bl31_v1.44.elf
 lubancat-5-rk3588_pkg := lubancat-5
+
+u-boot-rockchip_platforms += lubancat-5-v2-rk3588
+lubancat-5-v2-rk3588_ddr := rk3588_ddr_lp4_1560MHz_lp5_2736MHz_v1.15.bin
+lubancat-5-v2-rk3588_bl31 := rk3588_bl31_v1.44.elf
+lubancat-5-v2-rk3588_pkg := lubancat-5-v2

@@ -1,6 +1,0 @@
-config RTL8852BU
-	tristate "Realtek 8852B USB WiFi"
-	depends on USB
-	help
-	  Help message of RTL8852BU
-
