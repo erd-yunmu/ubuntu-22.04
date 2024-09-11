@@ -70,6 +70,9 @@ python-is-python3 fdisk bc
 ### 编译鲁班猫5
 `sudo ./build.sh --clean --board=lubancat-5`
 
+### 编译鲁班猫5V2
+`sudo ./build.sh --clean --board=lubancat-5-v2`
+
 ### 进内核目录编译
 ```
 make CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64 rockchip_linux_defconfig
