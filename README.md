@@ -72,8 +72,8 @@ python-is-python3 fdisk bc
 
 ### 进内核目录编译
 ```
-make CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64 rockchip_defconfig
-make KBUILD_IMAGE="arch/arm64/boot/Image" CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64 -j "$(nproc)" bindeb-pkg
+make CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64 rockchip_linux_defconfig
+make KBUILD_IMAGE="arch/arm64/boot/Image" CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64 -j"$(nproc)" bindeb-pkg
 ```
 
 ### 进uboot目录编译
