@@ -15,7 +15,7 @@
 * 支持Rockhip MPP视频硬编码和硬解码
 * 预装mpv，支持视频硬解码
 * 兼容Docker和Plex服务器
-* 6.1.43 Linux 内核
+* 6.1.79 Linux 内核
 
 # 安装
 
@@ -83,3 +83,6 @@ make KBUILD_IMAGE="arch/arm64/boot/Image" CROSS_COMPILE=aarch64-linux-gnu- ARCH=
 `dpkg-buildpackage -a "$(cat debian/arch)" -d -b -nc -uc`
 
 镜像路径在images文件夹下
+
+---
+> Ubuntu is a trademark of Canonical Ltd. Rockchip is a trademark of Fuzhou Rockchip Electronics Co., Ltd. The Ubuntu Rockchip project is not affiliated with Canonical Ltd or Fuzhou Rockchip Electronics Co., Ltd. All other product names, logos, and brands are property of their respective owners. The Ubuntu name is owned by [Canonical Limited](https://ubuntu.com/).

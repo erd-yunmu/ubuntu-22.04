@@ -64,7 +64,7 @@ for type in $target; do
     rm -rf ${chroot_dir}
     mkdir -p ${chroot_dir}
 
-    tar -xpJf ubuntu-22.04.4-${type}-arm64.rootfs.tar.xz -C ${chroot_dir}
+    tar -xpJf ubuntu-22.04.5-${type}-arm64.rootfs.tar.xz -C ${chroot_dir}
 
     # Mount the temporary API filesystems
     mkdir -p ${chroot_dir}/{proc,sys,run,dev,dev/pts}
@@ -107,7 +107,7 @@ for type in $target; do
     umount -lf ${chroot_dir}/* 2> /dev/null || true
 
     # Tar the entire rootfs
-    cd ${chroot_dir} && tar -cpf ../ubuntu-22.04.4-${type}-arm64-"${BOARD}".rootfs.tar . && cd ..
-    ../scripts/build-image.sh ubuntu-22.04.4-${type}-arm64-"${BOARD}".rootfs.tar
-    rm -f ubuntu-22.04.4-${type}-arm64-"${BOARD}".rootfs.tar
+    cd ${chroot_dir} && tar -cpf ../ubuntu-22.04.5-${type}-arm64-"${BOARD}".rootfs.tar . && cd ..
+    ../scripts/build-image.sh ubuntu-22.04.5-${type}-arm64-"${BOARD}".rootfs.tar
+    rm -f ubuntu-22.04.5-${type}-arm64-"${BOARD}".rootfs.tar
 done

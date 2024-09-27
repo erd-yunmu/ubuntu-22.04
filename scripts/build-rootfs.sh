@@ -12,15 +12,15 @@ cd "$(dirname -- "$(readlink -f -- "$0")")" && cd ..
 mkdir -p build && cd build
 
 if [[ ${DESKTOP_ONLY} == "Y" ]]; then
-    if [[ -f ubuntu-22.04.4-desktop-arm64.rootfs.tar.xz ]]; then
+    if [[ -f ubuntu-22.04.5-desktop-arm64.rootfs.tar.xz ]]; then
         exit 0
     fi
 elif [[ ${SERVER_ONLY} == "Y" ]]; then
-    if [[ -f ubuntu-22.04.4-server-arm64.rootfs.tar.xz ]]; then
+    if [[ -f ubuntu-22.04.5-server-arm64.rootfs.tar.xz ]]; then
         exit 0
     fi
 else
-    if [[ -f ubuntu-22.04.4-server-arm64.rootfs.tar.xz && -f ubuntu-22.04.4-desktop-arm64.rootfs.tar.xz ]]; then
+    if [[ -f ubuntu-22.04.5-server-arm64.rootfs.tar.xz && -f ubuntu-22.04.5-desktop-arm64.rootfs.tar.xz ]]; then
         exit 0
     fi
 fi
@@ -168,6 +168,9 @@ python3-dev cloud-initramfs-growroot tree
 #chmod a+r /etc/apt/keyrings/embedfire.gpg
 #echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/embedfire.gpg] https://cloud.embedfire.com/mirrors/ebf-debian carp-rk3588 main" | tee /etc/apt/sources.list.d/embedfire-carp-rk3588.list > /dev/null
 
+# Update upgrade
+apt-get -y full-upgrade
+
 # Remove cryptsetup and needrestart
 apt-get -y remove cryptsetup needrestart
 
@@ -279,7 +282,7 @@ umount -lf ${chroot_dir}/dev/pts 2> /dev/null || true
 umount -lf ${chroot_dir}/* 2> /dev/null || true
 
 # Tar the entire rootfs
-[[ ${DESKTOP_ONLY} != "Y" ]] && cd ${chroot_dir} && XZ_OPT="-3 -T0" tar -cpJf ../ubuntu-22.04.4-server-arm64.rootfs.tar.xz . && cd ..
+[[ ${DESKTOP_ONLY} != "Y" ]] && cd ${chroot_dir} && XZ_OPT="-3 -T0" tar -cpJf ../ubuntu-22.04.5-server-arm64.rootfs.tar.xz . && cd ..
 [[ ${SERVER_ONLY} == "Y" ]] && exit 0
 
 # Mount the temporary API filesystems
@@ -350,7 +353,8 @@ rm -rf ${chroot_dir}/etc/systemd/system/systemd-networkd-wait-online.service.d/o
 cp ${overlay_dir}/etc/gdm3/custom.conf ${chroot_dir}/etc/gdm3/custom.conf
 
 # default image background
-mkdir -p ${chroot_dir}/usr/share/backgrounds
+rm -rf ${chroot_dir}/usr/share/backgrounds/Jammy-Jellyfish_WP_4096x2304_Grey.png
+mv ${chroot_dir}/usr/share/backgrounds/warty-final-ubuntu.png ${chroot_dir}/usr/share/backgrounds/ubuntu-default-greyscale-wallpaper.png
 cp ${overlay_dir}/warty-final-ubuntu.png ${chroot_dir}/usr/share/backgrounds/warty-final-ubuntu.png
 
 # Change startup logo
@@ -403,4 +407,4 @@ umount -lf ${chroot_dir}/dev/pts 2> /dev/null || true
 umount -lf ${chroot_dir}/* 2> /dev/null || true
 
 # Tar the entire rootfs
-cd ${chroot_dir} && XZ_OPT="-3 -T0" tar -cpJf ../ubuntu-22.04.4-desktop-arm64.rootfs.tar.xz . && cd ..
+cd ${chroot_dir} && XZ_OPT="-3 -T0" tar -cpJf ../ubuntu-22.04.5-desktop-arm64.rootfs.tar.xz . && cd ..
