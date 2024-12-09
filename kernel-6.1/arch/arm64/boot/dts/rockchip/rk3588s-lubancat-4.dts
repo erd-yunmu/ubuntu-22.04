@@ -10,19 +10,24 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/pwm/pwm.h>
 #include <dt-bindings/pinctrl/rockchip.h>
-#include <dt-bindings/input/rk-input.h>
+//#include <dt-bindings/input/rk-input.h>
+#include <dt-bindings/input/linux-event-codes.h>
 #include <dt-bindings/display/drm_mipi_dsi.h>
 #include <dt-bindings/display/rockchip_vop.h>
-#include <dt-bindings/phy/jlsemi-dt-phy.h>
 #include <dt-bindings/sensor-dev.h>
+#include <dt-bindings/phy/jlsemi-dt-phy.h>
 #include "rk3588s.dtsi"
 #include "rk3588-linux.dtsi"
 
 // #include "rk3588s-lubancat-40pin.dtsi"
-//#include "rk3588s-lubancat-csi2.dtsi"
-//#include "rk3588s-lubancat-csi2-cam0-imx415.dtsi"
-//#include "rk3588s-lubancat-csi2-cam1-imx415.dtsi"
-//#include "rk3588s-lubancat-csi2-cam2-imx415.dtsi"
+// #include "rk3588s-lubancat-csi2.dtsi"
+// #include "rk3588s-lubancat-csi2_cam0.dtsi"
+// #include "rk3588s-lubancat-csi2_cam1.dtsi"
+// #include "rk3588s-lubancat-csi2_cam2.dtsi"
+#include "rk3588s-lubancat-4-csi.dtsi"
+// #include "rk3588s-lubancat-4-cam0-imx415.dtsi"
+// #include "rk3588s-lubancat-4-cam1-imx415.dtsi"
+// #include "rk3588s-lubancat-4-cam2-imx415.dtsi"
 
 
 /* 显示输出配置，
@@ -49,17 +54,17 @@
 / {
 	model = "Embedfire LubanCat-4";
 	compatible = "embedfire,rk3588s-lubancat-4", "rockchip,rk3588";
-
+	
 	chosen: chosen {
-		bootargs = "earlycon=uart8250,mmio32,0xfeb50000 console=ttyFIQ0 coherent_pool=1m irqchip.gicv3_pseudo_nmi=0";
+		bootargs = "earlycon=uart8250,mmio32,0xfeb50000 console=ttyFIQ0 irqchip.gicv3_pseudo_nmi=0 rcupdate.rcu_expedited=1 rcu_nocbs=all";
 	};
 
 	leds: leds {
 		status = "okay";
 		compatible = "gpio-leds";
 
-		sys_status_led: sys-status-led {
-			label = "sys_status_led";
+		sys_led: sys-led {
+			label = "sys_led";
 			linux,default-trigger = "heartbeat";
 			default-state = "on";
 			gpios = <&gpio4 RK_PB5 GPIO_ACTIVE_LOW>;
@@ -76,7 +81,7 @@
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
 	};
-	
+
 	vcc5v0_sys: vcc5v0-sys {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc5v0_sys";
@@ -333,7 +338,7 @@
 		224 225 226 227 228 229 230 231
 		232 233 234 235 236 237 238 239
 		240 241 242 243 244 245 246 247
-		248 249 250 251 252 253 254 255	
+		248 249 250 251 252 253 254 255
 		>;
 		default-brightness-level = <200>;
 	};
@@ -373,7 +378,7 @@
 		224 225 226 227 228 229 230 231
 		232 233 234 235 236 237 238 239
 		240 241 242 243 244 245 246 247
-		248 249 250 251 252 253 254 255	
+		248 249 250 251 252 253 254 255
 		>;
 		default-brightness-level = <200>;
 	};
@@ -384,9 +389,8 @@
 };
 
 &dmc_opp_table {
-    /delete-node/ opp-2750000000;
+	/delete-node/ opp-2750000000;
 };
-
 
 &av1d {
 	status = "okay";
@@ -397,7 +401,7 @@
 };
 
 &spdif_tx2 {
-    status = "okay";
+	status = "okay";
 };
 
 &i2s5_8ch {
@@ -1001,12 +1005,12 @@
 };
 
 &i2s0_8ch {
-    status = "okay";
-    rockchip,clk-trcm = <1>;
-    pinctrl-0 = <&i2s0_lrck
-             &i2s0_sclk
-             &i2s0_sdi0
-             &i2s0_sdo0>;
+	status = "okay";
+	rockchip,clk-trcm = <1>;
+	pinctrl-0 = <&i2s0_lrck
+			 &i2s0_sclk
+			 &i2s0_sdi0
+			 &i2s0_sdo0>;
 };
 
 &saradc {
@@ -1129,23 +1133,31 @@
 	ir_key_lubancat{
 	rockchip,usercode = <0xff00>;
 	rockchip,key_table =
-		<0xeb   KEY_POWER>,
-		<0xec   KEY_MENU>,
-		<0xfe   KEY_BACK>,
-		<0xb7   KEY_HOME>,
-		<0xa3   KEY_WWW>,
-		<0xf4   KEY_VOLUMEUP>,
-		<0xa7   KEY_VOLUMEDOWN>,
-		<0xf8   KEY_REPLY>,
-		<0xfc   KEY_UP>,
-		<0xfd   KEY_DOWN>,
-		<0xf1   KEY_LEFT>,
-		<0xe5   KEY_RIGHT>;
+        <0xba   KEY_POWER>,   //电源按键
+        <0xb8   KEY_MENU>,     //菜单按键
+        <0xbc   KEY_BACK>,      //返回按键
+        <0xbb   KEY_HOME>,      //home键按键
+        <0xea   KEY_PLAY>,      //播放按键
+        <0xbf   KEY_VOLUMEUP>,  //音量加按键
+        <0xe6   KEY_VOLUMEDOWN>,   //音量键按键
+        <0xf6   KEY_FASTFORWARD>,  //快进按键
+        <0xf8   KEY_FASTREVERSE>,  //快退按键
+        <0xf2   KEY_BACKSPACE>,    //BaskSpace按键
+        <0xf3   KEY_1>,            //按键1
+        <0xe7   KEY_2>,
+        <0xa1   KEY_3>,
+        <0xf7   KEY_4>,
+        <0xe3   KEY_5>,
+        <0xa5   KEY_6>,
+        <0xbd   KEY_7>,
+        <0xad   KEY_8>,
+        <0xb5   KEY_9>,
+        <0xe9   KEY_0>;            //按键0
 	};
 
-	ir_key2 {	
+	ir_key2 {
 		rockchip,usercode = <0xf708>;
-		rockchip,key_table =	
+		rockchip,key_table =
 			<0x28   KEY_POWER>,
 			<0xfe   KEY_SETUP>,
 			<0xa4   KEY_MUTE>,
@@ -1160,11 +1172,11 @@
 			<0x7c   KEY_VOLUMEDOWN>,
 			<0x79   KEY_VOLUMEUP>,
 			<0x57   KEY_AUDIO>,
-			<0x5d   KEY_SUBTITLE>,  
-			<0x99   KEY_PHONE>, 
+			<0x5d   KEY_SUBTITLE>,
+			<0x99   KEY_PHONE>,
 			<0xfd   KEY_WWW>,
 			<0xfc   KEY_F1>,
-			<0x7e   KEY_TV>;			
+			<0x7e   KEY_TV>;
 	};
 
 	ir_key3 {
@@ -1255,8 +1267,6 @@
 };
 
 &rkvenc0 {
-	venc-supply = <&vdd_vdenc_s0>;
-	mem-supply = <&vdd_vdenc_mem_s0>;
 	status = "okay";
 };
 
@@ -1265,12 +1275,14 @@
 };
 
 &rkvenc1 {
-	venc-supply = <&vdd_vdenc_s0>;
-	mem-supply = <&vdd_vdenc_mem_s0>;
 	status = "okay";
 };
 
 &rkvenc1_mmu {
+	status = "okay";
+};
+
+&rkvtunnel {
 	status = "okay";
 };
 
@@ -1296,8 +1308,8 @@
 			 &gmac1_rgmii_clk
 			 &gmac1_rgmii_bus>;
 
-	tx_delay = <0x00>;
-	rx_delay = <0x1b>; 
+	tx_delay = <0x1b>;
+	/* rx_delay = <0x00>; */
 
 	phy-handle = <&rgmii_phy1>;
 	status = "okay";
@@ -1318,7 +1330,7 @@
 	};
 };
 
-/* SATA30/PCIe20x1_2 Combo PHY */
+/* SATA30_HOST0/PCIe20x1_2 Combo PHY */
 &combphy0_ps {
 	status = "okay";
 };
@@ -1369,7 +1381,7 @@
 &usbdrd_dwc3_0 {
 	dr_mode = "otg";
 	usb-role-switch;
-	
+
 	status = "okay";
 	port {
 		#address-cells = <1>;
@@ -1391,7 +1403,7 @@
 	status = "okay";
 };
 
-/* USB3.1/SATA/PCIe20x1_1 Combo PHY */
+/* USB30_HOST2/SATA30_HOST2/PCIe20x1_1 Combo PHY */
 &combphy2_psu {
 	status = "okay";
 };
@@ -1457,7 +1469,6 @@
 };
 
 /* hdmi0 display */
-
 &hdmi0 {
 	enable-gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_HIGH>;
 	cec-enable = "true";
@@ -1486,14 +1497,13 @@
 };
 
 /* dp0 display */
-
 &dp0 {
 	status = "okay";
 };
 
 &route_dp0 {
 	status = "okay";
-	connect = <&vp1_out_dp0>;	
+	connect = <&vp1_out_dp0>;
 };
 
 &dp0_in_vp0 {
@@ -1550,11 +1560,11 @@
 };
 
 &pinctrl {
-    hym8563 {
-        hym8563_int: hym8563-int {
-            rockchip,pins = <0 RK_PB0 RK_FUNC_GPIO &pcfg_pull_up>;
-        };
-    };
+	hym8563 {
+		hym8563_int: hym8563-int {
+			rockchip,pins = <0 RK_PB0 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
 
 	headphone {
 		hp_det: hp-det {

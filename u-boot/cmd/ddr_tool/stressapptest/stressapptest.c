@@ -24,7 +24,7 @@
 #include "stressapptest.h"
 #include "../ddr_tool_common.h"
 
-#define __version__ "v1.0.0 20230214"
+#define __version__ "v1.3.0 20230713"
 
 #if defined(CONFIG_ARM64)
 /* Float operation in TOOLCHAIN_ARM32 will cause the compile error */
@@ -507,6 +507,23 @@ static void pattern_list_init(struct pattern *pattern_list,
 	sat->weight_count = weight_count;
 }
 
+static u32 get_max_page_num(ulong page_size_byte)
+{
+	ulong start_adr[CONFIG_NR_DRAM_BANKS], length[CONFIG_NR_DRAM_BANKS];
+	u32 page_num = 0;
+
+	get_print_available_addr(start_adr, length, 0);
+
+	page_num = 0;
+	for (int i = 0; i < ARRAY_SIZE(start_adr) || i < ARRAY_SIZE(length); i++) {
+		if ((start_adr[i] == 0 && length[i] == 0))
+			break;
+		page_num += (u32)(length[i] / page_size_byte);
+	}
+
+	return page_num;
+}
+
 static int get_page_addr(struct page *page_list,
 			 struct stressapptest_params *sat)
 {
@@ -514,28 +531,37 @@ static int get_page_addr(struct page *page_list,
 	ulong used_length;
 	u32 page = 0;
 
-	get_print_available_addr(start_adr, length, 1);
+	get_print_available_addr(start_adr, length, 0);
 
-	printf("Pages for test:\n	Page	Start        End        Length\n");
-
+	printf("Address for test:\n	Start         End         Length\n");
 	for (int i = 0; i < CONFIG_NR_DRAM_BANKS; i++) {
 		if ((start_adr[i] == 0 && length[i] == 0) || page >= sat->page_num)
 			break;
+		if (start_adr[i] + length[i] < sat->total_start_addr)
+			continue;
+		if (start_adr[i] < sat->total_start_addr) {
+			length[i] -= sat->total_start_addr - start_adr[i];
+			start_adr[i] = sat->total_start_addr;
+		}
 
 		used_length = 0;
 		while (page < sat->page_num &&
 		       length[i] >= used_length + sat->page_size_byte) {
 			page_list[page].base_addr = (void *)(start_adr[i] + used_length);
 			used_length += sat->page_size_byte;
-			printf("	%d	0x%08lx - 0x%08lx 0x%08lx\n",
-			       page, (ulong)page_list[page].base_addr,
-			       (ulong)page_list[page].base_addr + sat->page_size_byte,
-			       (ulong)sat->page_size_byte);
 			page++;
 		}
+		printf("	0x%09lx - 0x%09lx 0x%09lx\n",
+		       start_adr[i], start_adr[i] + used_length, used_length);
 	}
 
-	if (page < sat->page_num) {
+	printf("page_num = %d, page_size = 0x%lx, total_test_size = 0x%lx\n",
+	       page, sat->page_size_byte, sat->page_size_byte * page);
+
+	if (sat->total_test_size_mb == 0) {
+		/* No arg for total_test_size_mb, test all available space by default. */
+		sat->page_num = page;
+	} else if (page < sat->page_num || page < sat->cpu_num * 4) {
 		printf("ERROR: Cannot get enough pages to test.\n");
 		printf("Please decrease page_size or test_size\n");
 
@@ -615,13 +641,15 @@ static void page_init(struct pattern *pattern_list,
 }
 
 static u32 page_rand_pick(struct page *page_list, bool valid,
-			  struct stressapptest_params *sat)
+			  struct stressapptest_params *sat, u8 cpu_id)
 {
 	u32 pick;
-	u32 cpu_id;
 
-	cpu_id = get_cpu_id();
-	pick = rand() % (sat->page_num / sat->cpu_num) * sat->cpu_num + cpu_id;
+	pick = rand() % sat->page_num;
+	pick = pick / sat->cpu_num * sat->cpu_num + cpu_id;
+	if (pick >= sat->page_num)
+		pick = cpu_id;
+
 	while (page_list[pick].valid != valid) {
 		pick += sat->cpu_num;
 		if (pick >= sat->page_num)
@@ -631,47 +659,64 @@ static u32 page_rand_pick(struct page *page_list, bool valid,
 	return pick;
 }
 
-static u32 block_inv_mis_search(void *dst_addr, struct pattern *src_pattern,
-				struct stressapptest_params *sat)
+static u32 block_mis_search(void *dst_addr, struct pattern *src_pattern, char *item,
+			    struct stressapptest_params *sat, u8 cpu_id)
 {
 	u32 *dst_mem;
-	u32 dst_data;
-	u32 expc_data;
-	u32 mis_bit;
+	u32 read, reread, expected;
 	u32 err = 0;
+	u32 *print_addr;
+	int i, j;
 
 	dst_mem = (u32 *)dst_addr;
 
-	for (int i = 0; i < sat->block_size_byte / sizeof(u32); i++) {
-		dst_data = dst_mem[i];
-		expc_data = pattern_get(src_pattern, i);
+	for (i = 0; i < sat->block_size_byte / sizeof(u32); i++) {
+		read = dst_mem[i];
+		expected = pattern_get(src_pattern, i);
 
-		if (dst_data != expc_data) {
+		if (read != expected) {
+			flush_dcache_range((ulong)&dst_mem[i], (ulong)&dst_mem[i + 1]);
+			reread = dst_mem[i];
+
 			lock_byte_mutex(&print_mutex);
 
 			print_time_stamp();
-			printf("INV ERROR at 0x%010lx:\n", (ulong)&dst_mem[i]);
-			printf("	data = 0x%08x\n", dst_data);
-			printf("	expc = 0x%08x\n", expc_data);
-
-			mis_bit = dst_data ^ expc_data;
-			printf("	mismatch at bit");
-			for (int j = 31; j >= 0; j--) {
-				if (((mis_bit >> j) & 1) == 1)
-					printf(" %d", j);
-			}
+			printf("%s Hardware Error: miscompare on CPU %d at 0x%lx:\n",
+			       item, cpu_id, (ulong)&dst_mem[i]);
+			printf("	read:    0x%08x\n", read);
+			printf("	reread:  0x%08x(reread^read:0x%08x)\n",
+			       reread, reread ^ read);
+			printf("	expected:0x%08x(expected^read:0x%08x)\n",
+			       expected, expected ^ read);
+			printf("	\'%s%s%d\'", src_pattern->pat->name,
+							  src_pattern->inv ? "~" : "",
+							  32 << src_pattern->repeat);
+			if (reread == expected)
+				printf(" read error");
 			printf("\n");
 
+			/* Dump data around the error address */
+			print_addr = &dst_mem[i] - 64;
+			for (j = 0; j < 128; j += 8)
+				printf("  [0x%010lx] 0x%08x, 0x%08x, 0x%08x, 0x%08x, 0x%08x, 0x%08x, 0x%08x, 0x%08x\n",
+				       (ulong)(print_addr + j),
+				       *(print_addr + j), *(print_addr + j + 1),
+				       *(print_addr + j + 2), *(print_addr + j + 3),
+				       *(print_addr + j + 4), *(print_addr + j + 5),
+				       *(print_addr + j + 6), *(print_addr + j + 7));
+
 			unlock_byte_mutex(&print_mutex);
-			dst_mem[i] = expc_data;
+
+			/* fix the error */
+			dst_mem[i] = expected;
 			err++;
+			flush_dcache_range((ulong)&dst_mem[i], (ulong)&dst_mem[i + 1]);
 		}
 	}
-	flush_dcache_all();
 
 	if (err == 0) {
 		lock_byte_mutex(&print_mutex);
-		printf("INV ERROR detected but cannot find mismatch data (maybe read error).\n");
+		printf("%s ERROR detected but cannot find mismatch data (maybe read error).\n", item);
 		unlock_byte_mutex(&print_mutex);
 	}
 
@@ -679,7 +724,7 @@ static u32 block_inv_mis_search(void *dst_addr, struct pattern *src_pattern,
 }
 
 static u32 block_inv_check(void *dst_addr, struct pattern *src_pattern,
-			   struct stressapptest_params *sat)
+			   struct stressapptest_params *sat, u8 cpu_id)
 {
 	u32 *dst_mem;
 	u32 err = 0;
@@ -732,15 +777,8 @@ static u32 block_inv_check(void *dst_addr, struct pattern *src_pattern,
 	if (adler_sum.a1 != src_pattern->adler_sum.a1 ||
 	    adler_sum.b1 != src_pattern->adler_sum.b1 ||
 	    adler_sum.a2 != src_pattern->adler_sum.a2 ||
-	    adler_sum.b2 != src_pattern->adler_sum.b2) {
-		err = block_inv_mis_search(dst_addr, src_pattern, sat);
-
-		lock_byte_mutex(&print_mutex);
-		printf("(CPU%d, Pattern: %s, inv: %d, repeat: %d)\n\n",
-		       get_cpu_id(), src_pattern->pat->name, src_pattern->inv,
-		       src_pattern->repeat);
-		unlock_byte_mutex(&print_mutex);
-	}
+	    adler_sum.b2 != src_pattern->adler_sum.b2)
+		err = block_mis_search(dst_addr, src_pattern, "Inv", sat, cpu_id);
 
 	return err;
 }
@@ -753,12 +791,14 @@ static void page_inv_up(void *src_addr, struct stressapptest_params *sat)
 
 	for (int i = 0; i < sat->block_num; i++) {
 		dst_mem = (uint *)dst_addr;
-		for (int j = 0; j < sat->block_size_byte / sizeof(uint); j++) {
-			data = dst_mem[j];
-			dst_mem[j] = ~data;
-		}
+		for (int j = 0; j < sat->block_size_byte / sizeof(uint); j += 32) {
+			for (int k = j; k < j + 32; k++) {
+				data = dst_mem[k];
+				dst_mem[k] = ~data;
+			}
+			flush_dcache_range((ulong)&dst_mem[j], (ulong)&dst_mem[j + 1]);
+ 		}
 		dst_addr += sat->block_size_byte;
-		flush_dcache_all();
 	}
 }
 
@@ -772,22 +812,24 @@ static void page_inv_down(void *src_addr, struct stressapptest_params *sat)
 
 	for (int i = sat->block_num - 1; i >= 0; i--) {
 		dst_mem = (uint *)dst_addr;
-		for (int j = sat->block_size_byte / sizeof(uint) - 1; j >= 0; j--) {
-			data = dst_mem[j];
-			dst_mem[j] = ~data;
-		}
+		for (int j = sat->block_size_byte / sizeof(uint) - 32; j >= 0; j -= 32) {
+			for (int k = j + 31; k >= j; k--) {
+				data = dst_mem[k];
+				dst_mem[k] = ~data;
+			}
+			flush_dcache_range((ulong)&dst_mem[j], (ulong)&dst_mem[j + 1]);
+ 		}
 		dst_addr -= sat->block_size_byte;
-		flush_dcache_all();
 	}
 }
 
-static u32 page_inv(struct stressapptest_params *sat)
+static u32 page_inv(struct stressapptest_params *sat, u8 cpu_id)
 {
 	u32 src;
 	void *dst_block_addr;
 	u32 err = 0;
 
-	src = page_rand_pick(page_list, 1, sat);	/* pick a valid page */
+	src = page_rand_pick(page_list, 1, sat, cpu_id);	/* pick a valid page */
 	dst_block_addr = page_list[src].base_addr;
 
 	for (int i = 0; i < 4; i++) {
@@ -798,98 +840,31 @@ static u32 page_inv(struct stressapptest_params *sat)
 	}
 
 	for (int i = 0; i < sat->block_num; i++) {
-		err += block_inv_check(dst_block_addr, page_list[src].pattern, sat);
+		err += block_inv_check(dst_block_addr, page_list[src].pattern, sat, cpu_id);
 		dst_block_addr += sat->block_size_byte;
 	}
 
-	flush_dcache_all();
-
 	return err;
 }
 
-static u32 block_copy_mis_search(void *dst_addr, void *src_addr,
-				 struct pattern *src_pattern,
-				 struct stressapptest_params *sat)
-{
-	u32 *dst_mem;
-	u32 *src_mem;
-	u32 dst_data;
-	u32 src_data;
-	u32 expc_data;
-	u32 mis_bit;
-	u32 err = 0;
-
-	dst_mem = (u32 *)dst_addr;
-	src_mem = (u32 *)src_addr;
-
-	for (int i = 0; i < sat->block_size_byte / sizeof(u32); i++) {
-		dst_data = dst_mem[i];
-		src_data = src_mem[i];
-		expc_data = pattern_get(src_pattern, i);
-
-		if (dst_data != expc_data) {
-			lock_byte_mutex(&print_mutex);
-
-			print_time_stamp();
-			printf("COPY ERROR (");
-			if (src_data == expc_data)
-				printf("read");
-			else if (src_data != expc_data)
-				printf("write");
-			printf(" error) at 0x%010lx:\n", (ulong)&src_mem[i]);
-			printf("	data = 0x%08x\n", dst_data);
-			printf("	expc = 0x%08x\n", expc_data);
-
-			mis_bit = dst_data ^ expc_data;
-			printf("	mismatch at bit");
-			for (int j = 31; j >= 0; j--) {
-				if (((mis_bit >> j) & 1) == 1)
-					printf(" %d", j);
-			}
-			printf("\n");
-
-			unlock_byte_mutex(&print_mutex);
-			err++;
-			dst_mem[i] = expc_data;
-		}
-	}
-	flush_dcache_all();
-
-	if (err == 0) {
-		lock_byte_mutex(&print_mutex);
-		printf("COPY ERROR detected but cannot find mismatch data (maybe read error).\n");
-		unlock_byte_mutex(&print_mutex);
-	}
-
-	return err;
-}
-
-static u32 block_copy_check(void *dst_addr, void *src_addr,
-			    struct adler_sum *adler_sum,
-			    struct pattern *src_pattern,
-			    struct stressapptest_params *sat)
+static u32 block_copy_check(void *dst_addr, struct adler_sum *adler_sum,
+			    struct pattern *src_pattern, struct stressapptest_params *sat,
+			    u8 cpu_id)
 {
 	u32 err = 0;
 
 	if (adler_sum->a1 != src_pattern->adler_sum.a1 ||
 	    adler_sum->b1 != src_pattern->adler_sum.b1 ||
 	    adler_sum->a2 != src_pattern->adler_sum.a2 ||
-	    adler_sum->b2 != src_pattern->adler_sum.b2) {
-		err += block_copy_mis_search(dst_addr, src_addr, src_pattern, sat);
-
-		lock_byte_mutex(&print_mutex);
-		printf("(CPU%d, Pattern: %s, inv: %d, repeat: %d)\n\n",
-		       get_cpu_id(), src_pattern->pat->name, src_pattern->inv,
-		       src_pattern->repeat);
-		unlock_byte_mutex(&print_mutex);
-	}
+	    adler_sum->b2 != src_pattern->adler_sum.b2)
+		err = block_mis_search(dst_addr, src_pattern, "Copy", sat, cpu_id);
 
 	return err;
 }
 
 static u32 block_copy(void *dst_addr, void *src_addr,
 		      struct pattern *src_pattern,
-		      struct stressapptest_params *sat)
+		      struct stressapptest_params *sat, u8 cpu_id)
 {
 	u64 *dst_mem;
 	u64 *src_mem;
@@ -941,8 +916,6 @@ static u32 block_copy(void *dst_addr, void *src_addr,
 #endif
 	}
 
-	flush_dcache_all();
-
 #if defined(WARM_CPU)
 	d = a + b + c + d;
 	if (d == 1.0)
@@ -950,10 +923,10 @@ static u32 block_copy(void *dst_addr, void *src_addr,
 		printf("This will probably never happen.\n");
 #endif
 
-	return block_copy_check(dst_addr, src_addr, &adler_sum, src_pattern, sat);
+	return block_copy_check(dst_addr, &adler_sum, src_pattern, sat, cpu_id);
 }
 
-static u32 page_copy(struct stressapptest_params *sat)
+static u32 page_copy(struct stressapptest_params *sat, u8 cpu_id)
 {
 	u32 dst;
 	u32 src;
@@ -961,15 +934,14 @@ static u32 page_copy(struct stressapptest_params *sat)
 	void *src_block_addr;
 	u32 err = 0;
 
-	dst = page_rand_pick(page_list, 0, sat);	/* pick a empty page */
+	dst = page_rand_pick(page_list, 0, sat, cpu_id);	/* pick a empty page */
 	dst_block_addr = page_list[dst].base_addr;
-	src = page_rand_pick(page_list, 1, sat);	/* pick a valid page */
+	src = page_rand_pick(page_list, 1, sat, cpu_id);	/* pick a valid page */
 	src_block_addr = page_list[src].base_addr;
-	flush_dcache_all();
 
 	for (int i = 0; i < sat->block_num; i++) {
 		err += block_copy(dst_block_addr, src_block_addr,
-				  page_list[src].pattern, sat);
+				  page_list[src].pattern, sat, cpu_id);
 		dst_block_addr += sat->block_size_byte;
 		src_block_addr += sat->block_size_byte;
 	}
@@ -977,7 +949,8 @@ static u32 page_copy(struct stressapptest_params *sat)
 	page_list[dst].pattern = page_list[src].pattern;
 	page_list[dst].valid = 1;
 	page_list[src].valid = 0;
-	flush_dcache_all();
+	flush_dcache_range((ulong)&page_list[src], (ulong)&page_list[src + 1]);
+	flush_dcache_range((ulong)&page_list[dst], (ulong)&page_list[dst + 1]);
 
 	return err;
 }
@@ -999,12 +972,8 @@ void secondary_main(void)
 	udelay(100);
 
 	flush_dcache_all();
-	cpu_id = get_cpu_id();
-	if (cpu_id != sat.cpu_num) {
-		printf("Note: Cannot get correct CPU ID, CPU%d is identified as CPU%d.\n",
-		       sat.cpu_num, cpu_id);
-		cpu_id = sat.cpu_num;
-	}
+
+	cpu_id = sat.cpu_num;
 	cpu_init_finish[cpu_id] = 1;
 	printf("CPU%d start OK.\n", cpu_id);
 
@@ -1021,13 +990,18 @@ void secondary_main(void)
 			flush_dcache_all();
 			while (run_time_us() < test_time_us) {
 				if (rand() % 2 == 0)
-					cpu_copy_err[cpu_id] += page_copy(&sat);
+					cpu_copy_err[cpu_id] += page_copy(&sat, cpu_id);
 				else
-					cpu_inv_err[cpu_id] += page_inv(&sat);
+					cpu_inv_err[cpu_id] += page_inv(&sat, cpu_id);
 			}
 			test++;
 			cpu_test_finish[cpu_id] = 1;
-			flush_dcache_all();
+			flush_dcache_range((ulong)&cpu_test_finish[cpu_id],
+					   (ulong)&cpu_test_finish[cpu_id + 1]);
+			flush_dcache_range((ulong)&cpu_copy_err[cpu_id],
+					   (ulong)&cpu_copy_err[cpu_id + 1]);
+			flush_dcache_range((ulong)&cpu_inv_err[cpu_id],
+					   (ulong)&cpu_inv_err[cpu_id + 1]);
 		}
 	}
 #else
@@ -1085,7 +1059,10 @@ static int doing_stressapptest(void)
 	sat.cpu_num = 1;
 #endif
 
-	sat.page_num = (sat.total_test_size_mb << 20) / sat.page_size_byte;
+	if (sat.total_test_size_mb == 0)
+		sat.page_num = get_max_page_num(sat.page_size_byte);
+	else
+		sat.page_num = (sat.total_test_size_mb << 20) / sat.page_size_byte;
 	sat.block_num = sat.page_size_byte / sat.block_size_byte;
 
 	udelay(100);
@@ -1123,9 +1100,9 @@ static int doing_stressapptest(void)
 
 	while (run_time_us() < test_time_us) {
 		if (rand() % 2 == 0)
-			cpu_copy_err[0] += page_copy(&sat);
+			cpu_copy_err[0] += page_copy(&sat, 0);
 		else
-			cpu_inv_err[0] += page_inv(&sat);
+			cpu_inv_err[0] += page_inv(&sat, 0);
 
 		/* Print every 10 seconds */
 		now_10s = (u32)(run_time_us() / 1000000 / 10);
@@ -1151,9 +1128,11 @@ static int doing_stressapptest(void)
 				break;
 			}
 			mdelay(1);
-			flush_dcache_all();
+			flush_dcache_range((ulong)&cpu_test_finish[i],
+					   (ulong)&cpu_test_finish[i + 1]);
 		}
 	}
+	flush_dcache_all();
 #endif
 
 	for (i = 0; i < sat.cpu_num; i++) {
@@ -1179,8 +1158,9 @@ static int do_stressapptest(cmd_tbl_t *cmdtp, int flag, int argc, char *const ar
 	ulong test_time_sec = 20;
 	ulong page_size_kb = 1024;
 
-	sat.total_test_size_mb = 32;
+	sat.total_test_size_mb = 0;
 	sat.block_size_byte = 4096;
+	sat.total_start_addr = 0x0;
 
 	printf("StressAppTest in U-Boot, " __version__ "\n");
 
@@ -1194,10 +1174,16 @@ static int do_stressapptest(cmd_tbl_t *cmdtp, int flag, int argc, char *const ar
 		if (strict_strtoul(argv[2], 0, &sat.total_test_size_mb) < 0)
 			return CMD_RET_USAGE;
 		if (sat.total_test_size_mb < 1)
-			sat.total_test_size_mb = 32;
+			sat.total_test_size_mb = 0;
 	}
 	if (argc > 3) {
-		if (strict_strtoul(argv[3], 0, &page_size_kb) < 0)
+		if (strict_strtoul(argv[3], 0, &sat.total_start_addr) < 0)
+			return CMD_RET_USAGE;
+		if (sat.total_start_addr < 0x1)
+			sat.total_start_addr = 0x0;
+	}
+	if (argc > 4) {
+		if (strict_strtoul(argv[4], 0, &page_size_kb) < 0)
 			return CMD_RET_USAGE;
 		if (page_size_kb < 1)
 			page_size_kb = 1024;
@@ -1214,13 +1200,15 @@ static int do_stressapptest(cmd_tbl_t *cmdtp, int flag, int argc, char *const ar
 	return doing_stressapptest();
 }
 
-U_BOOT_CMD(stressapptest,	4,	1,	do_stressapptest,
-	   "StressAppTest for Rockship\n",
-	   "\narg1: test time in second, null or 0 for 20s.\n"
-	   "arg2: test size in MB, null or 0 for 32MB.\n"
-	   "arg3: test page size in Byte, null or 0 for 1024kB(1MB).\n"
+U_BOOT_CMD(stressapptest,	5,	1,	do_stressapptest,
+	   "StressAppTest for Rockchip\n",
+	   "\narg1: test time in second, default value is 20s.\n"
+	   "arg2: test size in MB, default value is all available space.\n"
+	   "arg3: start addr for test.\n"
+	   "arg4: test page size in kB, default value is 1024kB(1MB).\n"
 	   "example:\n"
-	   "	stressapptest: test for 20s, test size is 32MB, each page size is 1MB (32 pages).\n"
+	   "	stressapptest: test for 20s, test size is all available space, each page size is 1MB.\n"
 	   "	stressapptest 43200 64: test for 12h, test size is 64MB, each page size is 1MB (64 pages).\n"
-	   "	stressapptest 43200 16 512: test for 12h, test size is 16MB, each page size is 512kB (32 pages).\n"
+	   "	stressapptest 86400 1024 0x80000000: test for 24h, test size is 1024MB, start addr for test is 0x80000000, each page size is 1MB (1024 pages).\n"
+	   "	stressapptest 43200 16 0x40000000 512: test for 12h, test size is 16MB, start addr for test is 0x40000000, each page size is 512kB (32 pages).\n"
 );

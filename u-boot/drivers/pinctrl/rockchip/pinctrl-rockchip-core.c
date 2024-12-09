@@ -9,6 +9,8 @@
 #include <regmap.h>
 #include <syscon.h>
 #include <fdtdec.h>
+#include <dm/uclass-internal.h>
+#include <asm/gpio.h>
 
 #include "pinctrl-rockchip.h"
 
@@ -353,6 +355,11 @@ static int rockchip_pinconf_set(struct rockchip_pin_bank *bank,
 				u32 pin, u32 param, u32 arg)
 {
 	int rc;
+#if CONFIG_IS_ENABLED(DM_GPIO) && \
+	(CONFIG_IS_ENABLED(SPL_GPIO_SUPPORT) || !defined(CONFIG_SPL_BUILD))
+	struct gpio_desc desc;
+	char gpio_name[16];
+#endif
 
 	switch (param) {
 	case PIN_CONFIG_BIAS_DISABLE:
@@ -377,6 +384,32 @@ static int rockchip_pinconf_set(struct rockchip_pin_bank *bank,
 			return rc;
 		break;
 
+	case PIN_CONFIG_OUTPUT:
+#if CONFIG_IS_ENABLED(DM_GPIO) && \
+	(CONFIG_IS_ENABLED(SPL_GPIO_SUPPORT) || !defined(CONFIG_SPL_BUILD))
+		desc.flags = GPIOD_IS_OUT | GPIOD_IS_OUT_ACTIVE;
+		if (!arg) desc.flags |= GPIOD_ACTIVE_LOW;
+		snprintf(gpio_name, 16, "%s%d", bank->name, pin);
+		rc = dm_gpio_lookup_name(gpio_name, &desc);
+		if (rc < 0) {
+			debug("%s: GPIO %s-%d lookup failed (ret=%d)\n", __func__,
+				bank->name, pin, rc);
+			return rc;
+		}
+
+		rc = dm_gpio_request(&desc, gpio_name);
+		if (rc < 0) {
+			debug("%s: GPIO %s-%d request failed (ret=%d)\n", __func__,
+				bank->name, pin, rc);
+			return rc;
+		}
+		dm_gpio_set_dir_flags(&desc, GPIOD_IS_OUT);
+		dm_gpio_set_value(&desc, arg ? 1 : 0);
+		debug("%s: GPIO %s-%d set to %d\n", __func__, bank->name, pin, arg);
+#else
+		return -ENOSYS;
+#endif
+		break;
 	default:
 		break;
 	}
@@ -393,6 +426,8 @@ static const struct pinconf_param rockchip_conf_params[] = {
 	{ "drive-strength", PIN_CONFIG_DRIVE_STRENGTH, 0 },
 	{ "input-schmitt-disable", PIN_CONFIG_INPUT_SCHMITT_ENABLE, 0 },
 	{ "input-schmitt-enable", PIN_CONFIG_INPUT_SCHMITT_ENABLE, 1 },
+	{ "output-high", PIN_CONFIG_OUTPUT, 1, },
+	{ "output-low", PIN_CONFIG_OUTPUT, 0, },
 };
 
 static int rockchip_pinconf_prop_name_to_param(const char *property,
@@ -669,6 +704,32 @@ int rockchip_pinctrl_probe(struct udevice *dev)
 			return -ENODEV;
 		}
 		priv->regmap_pmu = regmap;
+	}
+
+	/* option: get ioc1-reg base address */
+	ret = uclass_get_device_by_phandle(UCLASS_SYSCON, dev, "rockchip,ioc1",
+					   &syscon);
+	if (!ret) {
+		/* get ioc1-reg base address */
+		regmap = syscon_get_regmap(syscon);
+		if (!regmap) {
+			debug("unable to find rockchip ioc1 regmap\n");
+			return -ENODEV;
+		}
+		priv->regmap_ioc1 = regmap;
+	}
+
+	/* option: get rmio-reg base address */
+	ret = uclass_get_device_by_phandle(UCLASS_SYSCON, dev, "rockchip,rmio",
+					   &syscon);
+	if (!ret) {
+		/* get pmugrf-reg base address */
+		regmap = syscon_get_regmap(syscon);
+		if (!regmap) {
+			debug("unable to find rockchip rmio regmap\n");
+			return -ENODEV;
+		}
+		priv->regmap_rmio = regmap;
 	}
 
 	ctrl = rockchip_pinctrl_get_soc_data(dev);

@@ -8,7 +8,10 @@ obj-y += OpteeClientApiLib.o
 obj-y += OpteeClientInterface.o
 obj-y += OpteeClientSMC.o
 obj-y += OpteeClientRPC.o
+obj-y += OpteeClientLoadTa.o
 obj-y += tee_smc-arm64.o
+obj-y += tee_mmc_rpmb.o
+obj-y += tee_ufs_rpmb.o
 obj-y += OpteeClientRkFs_common.o
 
 ifdef CONFIG_OPTEE_V1

@@ -13,11 +13,4 @@ struct lte_data {
 	struct gpio_desc *vbat_gpio;
 };
 
-struct lte_em05_data {
-	struct device *dev;
-	struct gpio_desc *reset_gpio;
-	struct gpio_desc *power_gpio;
-	struct gpio_desc *airplane_gpio;
-};
-
 #endif /* __LTE_H */

@@ -84,6 +84,13 @@ config MMC_DW
 	  block, this provides host support for SD and MMC interfaces, in both
 	  PIO, internal DMA mode and external DMA mode.
 
+config MMC_DW_PWREN_VALUE
+	hex "mmc dw powen value"
+	default 1 if ROCKCHIP_RK3576
+	default 0
+	help
+	  Config the value for MMC-DW drivers to power on sd card.
+
 config MMC_DW_EXYNOS
 	bool "Exynos specific extensions for Synopsys DW Memory Card Interface"
 	depends on ARCH_EXYNOS

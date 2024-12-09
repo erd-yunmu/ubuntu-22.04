@@ -25,6 +25,12 @@
 #define READ_TRAINING			(0x1 << 4)
 #define FULL_TRAINING			(0xff)
 
+/* #define DDR4_READ_GATE_PREAMBLE_MODE */
+#ifndef DDR4_READ_GATE_PREAMBLE_MODE
+/* DDR4 read gate normal mode conflicts with 1nCK preamble */
+#define DDR4_READ_GATE_2NCK_PREAMBLE
+#endif
+
 #define SKEW_RX_SIGNAL			(0)
 #define SKEW_TX_SIGNAL			(1)
 #define SKEW_CA_SIGNAL			(2)
@@ -374,6 +380,8 @@ static void rkclk_set_dpll(struct dram_info *dram, unsigned int hz)
 			break;
 		delay--;
 	}
+	if (delay <= 0)
+		printascii("ERROR: DPLL lock timeout!\n");
 
 	writel(DPLL_MODE(CLOCK_FROM_PLL), &dram->cru->mode);
 }
@@ -557,11 +565,18 @@ static void phy_pll_set(struct dram_info *dram, u32 freq, u32 wait)
 {
 	void __iomem *phy_base = dram->phy;
 	u32 fbdiv, prediv, postdiv, postdiv_en;
+	int delay = 1000;
 
 	if (wait) {
 		clrbits_le32(PHY_REG(phy_base, 0x53), PHY_PD_DISB);
-		while (!(readl(PHY_REG(phy_base, 0x90)) & PHY_PLL_LOCK))
-			continue;
+		while (!(readl(PHY_REG(phy_base, 0x90)) & PHY_PLL_LOCK)) {
+			udelay(1);
+			if (delay-- <= 0) {
+				printascii("ERROR: phy pll lock timeout!\n");
+				while (1)
+					;
+			}
+		}
 	} else {
 		freq /= MHz;
 		prediv = 1;
@@ -1323,16 +1338,6 @@ u32 read_mr(struct dram_info *dram, u32 rank, u32 mr_num, u32 dramtype)
 	return ret;
 }
 
-/* before call this function autorefresh should be disabled */
-void send_a_refresh(struct dram_info *dram)
-{
-	void __iomem *pctl_base = dram->pctl;
-
-	while (readl(pctl_base + DDR_PCTL2_DBGSTAT) & 0x3)
-		continue;
-	writel(0x3, pctl_base + DDR_PCTL2_DBGCMD);
-}
-
 static void enter_sr(struct dram_info *dram, u32 en)
 {
 	void __iomem *pctl_base = dram->pctl;
@@ -1566,6 +1571,10 @@ static int data_training_rg(struct dram_info *dram, u32 cs, u32 dramtype)
 	u32 dis_auto_zq = 0;
 	u32 odt_val_up, odt_val_dn;
 	u32 i, j;
+#if defined(DDR4_READ_GATE_2NCK_PREAMBLE)
+	void __iomem *pctl_base = dram->pctl;
+	u32 mr4_d4 = 0;
+#endif
 
 	odt_val_dn = readl(PHY_REG(phy_base, 0x110));
 	odt_val_up = readl(PHY_REG(phy_base, 0x111));
@@ -1583,8 +1592,15 @@ static int data_training_rg(struct dram_info *dram, u32 cs, u32 dramtype)
 	/* use normal read mode for data training */
 	clrbits_le32(PHY_REG(phy_base, 0xc), BIT(1));
 
-	if (dramtype == DDR4)
+	if (dramtype == DDR4) {
+#if defined(DDR4_READ_GATE_PREAMBLE_MODE)
 		setbits_le32(PHY_REG(phy_base, 0xc), BIT(1));
+#elif defined(DDR4_READ_GATE_2NCK_PREAMBLE)
+		mr4_d4 = readl(pctl_base + DDR_PCTL2_INIT6) >> PCTL2_DDR4_MR4_SHIFT & PCTL2_MR_MASK;
+		/* 2nCK Read Preamble */
+		pctl_write_mr(pctl_base, BIT(cs), 4, mr4_d4 | BIT(11), DDR4);
+#endif
+	}
 
 	/* choose training cs */
 	clrsetbits_le32(PHY_REG(phy_base, 2), 0x33, (0x20 >> cs));
@@ -1596,6 +1612,12 @@ static int data_training_rg(struct dram_info *dram, u32 cs, u32 dramtype)
 	clrsetbits_le32(PHY_REG(phy_base, 2), 0x33, (0x20 >> cs) | 0);
 	clrbits_le32(PHY_REG(phy_base, 2), 0x30);
 	pctl_rest_zqcs_aref(dram->pctl, dis_auto_zq);
+
+#if defined(DDR4_READ_GATE_2NCK_PREAMBLE)
+	if (dramtype == DDR4) {
+		pctl_write_mr(pctl_base, BIT(cs), 4, mr4_d4, DDR4);
+	}
+#endif
 
 	ret = (ret & 0x2f) ^ (readl(PHY_REG(phy_base, 0xf)) & 0xf);
 
@@ -1862,7 +1884,7 @@ static int data_training_wr(struct dram_info *dram, u32 cs, u32 dramtype,
 	/* PHY_0x7a [1] reg_dq_wr_train_en */
 	setbits_le32(PHY_REG(phy_base, 0x7a), BIT(1));
 
-	send_a_refresh(dram);
+	send_a_refresh(dram->pctl, 0x3);
 
 	while (1) {
 		if ((readl(PHY_REG(phy_base, 0x92)) >> 7) & 0x1)
@@ -2484,13 +2506,13 @@ static int modify_ddr34_bw_byte_map(u8 rg_result, struct rv1126_sdram_params *sd
 	return 0;
 }
 
-static int sdram_init_(struct dram_info *dram,
-		       struct rv1126_sdram_params *sdram_params, u32 post_init)
+int sdram_init_(struct dram_info *dram, struct rv1126_sdram_params *sdram_params, u32 post_init)
 {
 	void __iomem *pctl_base = dram->pctl;
 	void __iomem *phy_base = dram->phy;
 	u32 ddr4_vref;
 	u32 mr_tmp, tmp;
+	int delay = 1000;
 
 	rkclk_configure_ddr(dram, sdram_params);
 
@@ -2538,8 +2560,14 @@ static int sdram_init_(struct dram_info *dram,
 
 	rkclk_ddr_reset(dram, 0, 0, 0, 0);
 
-	while ((readl(pctl_base + DDR_PCTL2_STAT) & 0x7) == 0)
-		continue;
+	while ((readl(pctl_base + DDR_PCTL2_STAT) & 0x7) == 0) {
+		udelay(1);
+		if (delay-- <= 0) {
+			printascii("ERROR: Cannot wait dfi_init_done!\n");
+			while (1)
+				;
+		}
+	}
 
 	if (sdram_params->base.dramtype == LPDDR3) {
 		pctl_write_mr(dram->pctl, 3, 11, lp3_odt_value, LPDDR3);
@@ -2560,6 +2588,11 @@ static int sdram_init_(struct dram_info *dram,
 		pctl_write_mr(dram->pctl, 3, 22,
 			      mr_tmp >> PCTL2_LPDDR4_MR22_SHIFT & PCTL2_MR_MASK,
 			      LPDDR4);
+	} else if (sdram_params->base.dramtype == DDR4) {
+		mr_tmp = readl(pctl_base + DDR_PCTL2_INIT7) >> PCTL2_DDR4_MR6_SHIFT & PCTL2_MR_MASK;
+		pctl_write_mr(dram->pctl, 0x3, 6, mr_tmp | BIT(7), DDR4);
+		pctl_write_mr(dram->pctl, 0x3, 6, mr_tmp | BIT(7), DDR4);
+		pctl_write_mr(dram->pctl, 0x3, 6, mr_tmp, DDR4);
 	}
 
 	if (sdram_params->base.dramtype == DDR3 && post_init == 0)
@@ -2648,7 +2681,7 @@ static u64 dram_detect_cap(struct dram_info *dram,
 			if (sdram_detect_col(cap_info, coltmp) != 0)
 				goto cap_err;
 
-			sdram_detect_bank(cap_info, coltmp, bktmp);
+			sdram_detect_bank(cap_info, pctl_base, coltmp, bktmp);
 			if (dram_type != LPDDR3)
 				sdram_detect_dbw(cap_info, dram_type);
 		} else {
@@ -2658,7 +2691,7 @@ static u64 dram_detect_cap(struct dram_info *dram,
 
 			cap_info->col = 10;
 			cap_info->bk = 2;
-			sdram_detect_bg(cap_info, coltmp);
+			sdram_detect_bg(cap_info, pctl_base, coltmp);
 		}
 
 		if (sdram_detect_row(cap_info, coltmp, bktmp, rowtmp) != 0)
@@ -2721,8 +2754,6 @@ static u64 dram_detect_cap(struct dram_info *dram,
 				cap_info->bw = 0;
 		}
 	}
-	if (cap_info->bw > 0)
-		cap_info->dbw = 1;
 
 	writel(pwrctl, pctl_base + DDR_PCTL2_PWRCTL);
 
@@ -3300,6 +3331,7 @@ void ddr_set_rate(struct dram_info *dram,
 	struct rv1126_sdram_params *sdram_params_new;
 	void __iomem *pctl_base = dram->pctl;
 	void __iomem *phy_base = dram->phy;
+	int delay = 1000;
 
 	lp_stat = low_power_update(dram, 0);
 	sdram_params_new = get_default_sdram_config(freq);
@@ -3388,8 +3420,14 @@ void ddr_set_rate(struct dram_info *dram,
 					(0x0 << ACLK_DDR_UPCTL_EN_SHIFT),
 			BUS_SGRF_BASE_ADDR + SGRF_SOC_CON12);
 	while ((readl(pctl_base + DDR_PCTL2_DFISTAT) &
-	       PCTL2_DFI_INIT_COMPLETE) != PCTL2_DFI_INIT_COMPLETE)
-		continue;
+	       PCTL2_DFI_INIT_COMPLETE) != PCTL2_DFI_INIT_COMPLETE) {
+		udelay(1);
+		if (delay-- <= 0) {
+			printascii("ERROR: Cannot wait DFI_INIT_COMPLETE\n");
+			while (1)
+				;
+		}
+	}
 
 	sw_set_req(dram);
 	setbits_le32(pctl_base + DDR_PCTL2_MSTR, 0x1 << 29);
@@ -3449,6 +3487,13 @@ void ddr_set_rate(struct dram_info *dram,
 
 			mr_tmp = readl(pctl_base + UMCTL2_REGS_FREQ(dst_fsp) +
 				       DDR_PCTL2_INIT7);
+			/* updata ddr4 vrefdq */
+			pctl_write_mr(dram->pctl, 3, 6,
+				      (mr_tmp | (0x1 << 7)) >> PCTL2_DDR4_MR6_SHIFT &
+				      PCTL2_MR_MASK, dramtype);
+			pctl_write_mr(dram->pctl, 3, 6,
+				      (mr_tmp | (0x1 << 7)) >> PCTL2_DDR4_MR6_SHIFT &
+				      PCTL2_MR_MASK, dramtype);
 			pctl_write_mr(dram->pctl, 3, 6,
 				      mr_tmp >> PCTL2_DDR4_MR6_SHIFT &
 				      PCTL2_MR_MASK,

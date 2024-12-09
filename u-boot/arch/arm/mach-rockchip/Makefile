@@ -21,6 +21,7 @@ obj-$(CONFIG_$(SPL_)FIT) += fit_misc.o
 ifdef CONFIG_SPL_BUILD
 obj-y += spl_boot_mode.o
 obj-$(CONFIG_ROCKCHIP_META) += rk_meta.o
+obj-$(CONFIG_SPL_ROCKCHIP_HWID_DTB) += rk_hwid.o
 endif
 endif
 
@@ -49,15 +50,18 @@ obj-$(CONFIG_ROCKCHIP_FIT_IMAGE) += fit.o
 obj-$(CONFIG_ROCKCHIP_UIMAGE) += uimage.o
 obj-$(CONFIG_ROCKCHIP_SMCCC) += rockchip_smccc.o
 obj-$(CONFIG_ROCKCHIP_VENDOR_PARTITION) += vendor.o vendor_misc.o
-obj-$(CONFIG_ROCKCHIP_RESOURCE_IMAGE) += resource_img.o resource_logo.o
-obj-$(CONFIG_ROCKCHIP_HWID_DTB) += resource_hwid.o
+obj-$(CONFIG_ROCKCHIP_RESOURCE_IMAGE) += resource_img.o
+obj-$(CONFIG_ROCKCHIP_HWID_DTB) += rk_hwid.o
 obj-$(CONFIG_ROCKCHIP_DEBUGGER) += rockchip_debugger.o
+obj-$(CONFIG_RADXA_IMG) += radxa_img.o
 endif
 
-obj-$(CONFIG_FPGA_ROCKCHIP) += fpga.o
+obj-$(CONFIG_$(SPL_)FPGA_ROCKCHIP) += fpga.o
 obj-$(CONFIG_RAM) += param.o
 obj-$(CONFIG_$(SPL_TPL_)RAM) += sdram.o
 obj-$(CONFIG_SPL_KERNEL_BOOT) += spl_resource_img.o
+obj-$(CONFIG_SPL_PCIE_EP_SUPPORT) += spl_pcie_ep_boot.o
+obj-$(CONFIG_MISC_INIT_R) += misc.o
 
 obj-$(CONFIG_ROCKCHIP_PX30) += px30/
 obj-$(CONFIG_ROCKCHIP_RK3036) += rk3036/
@@ -72,11 +76,14 @@ obj-$(CONFIG_ROCKCHIP_RK3308) += rk3308/
 obj-$(CONFIG_ROCKCHIP_RK3328) += rk3328/
 obj-$(CONFIG_ROCKCHIP_RK3368) += rk3368/
 obj-$(CONFIG_ROCKCHIP_RK3399) += rk3399/
+obj-$(CONFIG_ROCKCHIP_RK3506) += rk3506/
 obj-$(CONFIG_ROCKCHIP_RK3528) += rk3528/
 obj-$(CONFIG_ROCKCHIP_RK3562) += rk3562/
 obj-$(CONFIG_ROCKCHIP_RK3568) += rk3568/
+obj-$(CONFIG_ROCKCHIP_RK3576) += rk3576/
 obj-$(CONFIG_ROCKCHIP_RK3588) += rk3588/
 obj-$(CONFIG_ROCKCHIP_RK1808) += rk1808/
+obj-$(CONFIG_ROCKCHIP_RV1103B) += rv1103b/
 obj-$(CONFIG_ROCKCHIP_RV1106) += rv1106/
 obj-$(CONFIG_ROCKCHIP_RV1108) += rv1108/
 obj-$(CONFIG_ROCKCHIP_RV1126) += rv1126/
@@ -91,3 +98,5 @@ obj-$(CONFIG_TPL_BUILD) += $(obj-tpl-y)
 obj-$(CONFIG_ROCKCHIP_PRELOADER_ATAGS) += rk_atags.o
 obj-$(CONFIG_SET_DFU_ALT_INFO) += dfu_alt_info.o
 obj-$(CONFIG_PSTORE) += pstore.o
+obj-$(CONFIG_ROCKCHIP_MINIDUMP) += rk_mini_dump.o
+

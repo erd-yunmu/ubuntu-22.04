@@ -2,7 +2,7 @@
 * 该项目旨在为Rockchip RK3588设备提供默认的Ubuntu 22.04体验。立即开始使用 Ubuntu 服务器或桌面映像以获得熟悉的环境。
 * 支持的设备正在不断开发。因此，您可能会遇到错误或缺少功能。我将尽力使用最新的更改和修复来更新此项目。如果您发现问题，请在问题或讨论部分报告。
 
-## 强调
+# 强调
 * 使用官方 Ubuntu 存储库通过 apt 进行包管理
 * 通过 apt 接收内核、固件和引导加载程序更新
 * 用于用户设置和配置的桌面首次运行向导
@@ -15,7 +15,7 @@
 * 支持Rockhip MPP视频硬编码和硬解码
 * 预装mpv，支持视频硬解码
 * 兼容Docker和Plex服务器
-* 6.1.79 Linux 内核
+* 6.1.84 Linux 内核
 
 # 安装
 
@@ -42,13 +42,19 @@
 sudo apt-get install -y build-essential gcc-aarch64-linux-gnu bison \
 qemu-user-static qemu-system-arm qemu-efi u-boot-tools binfmt-support \
 debootstrap flex libssl-dev bc rsync kmod cpio xz-utils fakeroot parted \
-udev dosfstools uuid-runtime git-lfs device-tree-compiler python2 python3 \
-python-is-python3 fdisk bc
+udev dosfstools uuid-runtime git-lfs device-tree-compiler python3 fdisk bc \
+python-is-python3
 ```
 
-### 一键编译桌面版和服务版
+# 一键编译桌面版和服务版
 ```
-用法: ./build.sh --board=lubancat-4
+用法: sudo ./build.sh --board=lubancat-4
+
+下面已支持设备直接编译
+sudo ./build.sh --board=lubancat-4
+sudo ./build.sh --board=lubancat-5      
+sudo ./build.sh --board=lubancat-5-v2
+sudo ./build.sh --board=lubancat-5io
 
 所需参数：
   -b, --board=BOARD      target board
@@ -64,23 +70,24 @@ python-is-python3 fdisk bc
   -l,  --launchpad       使用启动板存储库中的内核和 uboot
   -v,  --verbose         增加 bash 脚本的详细程度
 ```
-### 编译鲁班猫4
-`sudo ./build.sh --clean --board=lubancat-4`
 
-### 编译鲁班猫5
-`sudo ./build.sh --clean --board=lubancat-5`
-
-### 编译鲁班猫5V2
-`sudo ./build.sh --clean --board=lubancat-5-v2`
-
-### 进内核目录编译
+# 单独编译
+进入
+### 进内核目录单独编译
 ```
+cd build/linux-rockchip
+切换root进行编译
 make CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64 rockchip_linux_defconfig
 make KBUILD_IMAGE="arch/arm64/boot/Image" CROSS_COMPILE=aarch64-linux-gnu- ARCH=arm64 -j"$(nproc)" bindeb-pkg
+最后形成deb包在上一个目录 build 当前
 ```
 
-### 进uboot目录编译
-`dpkg-buildpackage -a "$(cat debian/arch)" -d -b -nc -uc`
+### 进uboot目录单独编译
+```
+cd build/u-boot-lubancat-rk3588
+dpkg-buildpackage -a "$(cat debian/arch)" -d -b -nc -uc
+最后形成deb包在上一个目录 build 当前
+```
 
 镜像路径在images文件夹下
 

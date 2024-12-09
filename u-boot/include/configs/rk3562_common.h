@@ -7,6 +7,8 @@
 #ifndef __CONFIG_RK3562_COMMON_H
 #define __CONFIG_RK3562_COMMON_H
 
+#define CFG_CPUID_OFFSET		0xa
+
 #include "rockchip-common.h"
 
 #define CONFIG_SPL_FRAMEWORK
@@ -40,6 +42,8 @@
 #define OTP_ALL_ONES_NUM_BITS		32
 #define OTP_SECURE_BOOT_ENABLE_ADDR	0x20
 #define OTP_SECURE_BOOT_ENABLE_SIZE	1
+#define OTP_RSA4096_ENABLE_ADDR		0x21
+#define OTP_RSA4096_ENABLE_SIZE		1
 #define OTP_RSA_HASH_ADDR		0x180
 #define OTP_RSA_HASH_SIZE		32
 

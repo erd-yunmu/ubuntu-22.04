@@ -8,6 +8,7 @@
 
 &emmc {
 	u-boot,dm-pre-reloc;
+	default-sample-phase = <0>;
 };
 
 &nandc {
@@ -57,3 +58,11 @@
 	status = "okay";
 };
 
+&usb2phy {
+	u-boot,dm-pre-reloc;
+	status = "okay";
+};
+
+&usb_otg {
+	u-boot,dm-pre-reloc;
+};

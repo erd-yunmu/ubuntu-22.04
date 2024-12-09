@@ -974,7 +974,9 @@ static ulong rk3308_clk_get_rate(struct clk *clk)
 	case SCLK_SPI1:
 		rate = rk3308_spi_get_clk(clk);
 		break;
-	case SCLK_PWM:
+	case SCLK_PWM0:
+	case SCLK_PWM1:
+	case SCLK_PWM2:
 		rate = rk3308_pwm_get_clk(clk);
 		break;
 	case DCLK_VOP:
@@ -1027,7 +1029,16 @@ static ulong rk3308_clk_set_rate(struct clk *clk, ulong rate)
 						      priv->cru, DPLL);
 		break;
 	case ARMCLK:
-		if (priv->armclk_hz)
+		/*
+		 * Why add `rate < rockchip_pll_get_rate(&rk3308_pll_clks[APLL],
+		 *					 priv->cru, APLL)` ?
+		 *
+		 * rockchip_wtemp_dvfs.c may decrease the arm freq, don't
+		 * limit this decrease operation here.
+		 */
+		if (priv->armclk_hz ||
+			(rate < rockchip_pll_get_rate(&rk3308_pll_clks[APLL],
+						      priv->cru, APLL)))
 			rk3308_armclk_set_clk(priv, rate);
 		priv->armclk_hz = rate;
 		break;
@@ -1059,7 +1070,9 @@ static ulong rk3308_clk_set_rate(struct clk *clk, ulong rate)
 	case SCLK_SPI1:
 		ret = rk3308_spi_set_clk(clk, rate);
 		break;
-	case SCLK_PWM:
+	case SCLK_PWM0:
+	case SCLK_PWM1:
+	case SCLK_PWM2:
 		ret = rk3308_pwm_set_clk(clk, rate);
 		break;
 	case DCLK_VOP:

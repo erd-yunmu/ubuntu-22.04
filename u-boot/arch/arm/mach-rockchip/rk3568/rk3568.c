@@ -497,6 +497,12 @@ static struct mm_region rk3568_mem_map[] = {
 			 PTE_BLOCK_NON_SHARE |
 			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
 	}, {
+		.virt = 0x100000000UL,
+		.phys = 0x100000000UL,
+		.size = 0x100000000UL,
+		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
+			 PTE_BLOCK_INNER_SHARE
+	}, {
 		.virt = 0x300000000,
 		.phys = 0x300000000,
 		.size = 0x0c0c00000,
@@ -777,6 +783,23 @@ void board_debug_uart_init(void)
 #endif
 }
 
+int fit_standalone_release(char *id, uintptr_t entry_point)
+{
+	/* risc-v configuration: */
+	/* Reset the scr1 */
+	writel(0x04000400, CRU_BASE + CRU_SOFTRST_CON26);
+	udelay(100);
+
+	/* set the scr1 addr */
+	writel((0xffff0000) | (entry_point >> 16), GRF_BASE + GRF_SOC_CON4);
+	udelay(10);
+
+	/* release the scr1 */
+	writel(0x04000000, CRU_BASE + CRU_SOFTRST_CON26);
+
+	return 0;
+}
+
 #if defined(CONFIG_SPL_BUILD) && !defined(CONFIG_TPL_BUILD)
 static void qos_priority_init(void)
 {
@@ -911,7 +934,7 @@ int arch_cpu_init(void)
 
 	/* Set the fspi to secure */
 	writel(((0x1 << 14) << 16) | (0x0 << 14), SGRF_BASE + SGRF_SOC_CON3);
-#else /* U-Boot */
+#endif /* U-Boot */
 	/* uboot: config iomux */
 #if defined(CONFIG_ROCKCHIP_SFC_IOMUX)
 	writel((0x70002000), GRF_BASE + GRF_GPIO1C_IOMUX_H);
@@ -921,7 +944,6 @@ int arch_cpu_init(void)
 	writel((0x77771111), GRF_BASE + GRF_GPIO1B_IOMUX_H);
 	writel((0x77771111), GRF_BASE + GRF_GPIO1C_IOMUX_L);
 	writel((0x07770111), GRF_BASE + GRF_GPIO1C_IOMUX_H);
-#endif
 #endif
 
 	/* Set i2c0 iomux */

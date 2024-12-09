@@ -167,7 +167,6 @@ static int c_show(struct seq_file *m, void *v)
 	int i, j;
 	struct device_node *np;
 	const char *cpu_model;
-
 	bool compat = personality(current->personality) == PER_LINUX32 ||
 		      is_compat_task();
 
@@ -221,7 +220,6 @@ static int c_show(struct seq_file *m, void *v)
 					seq_printf(m, " %s", hwcap_str[j]);
 		}
 		seq_puts(m, "\n");
-
 		np = of_find_node_by_path("/system");
 		if (np) {
 			if (!of_property_read_string(np, "cpu,model", &cpu_model))

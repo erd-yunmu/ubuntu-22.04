@@ -60,12 +60,6 @@
 #define	STMMAC_ALIGN(x)		ALIGN(ALIGN(x, SMP_CACHE_BYTES), 16)
 #define	TSO_MAX_BUFF_SIZE	(SZ_16K - 1)
 
-#define	RTL8211F_PHY_UID	0x001cc800
-#define	RTL8211F_PHY_UID_MASK	0x001ffc00
-#define	RTL8211F_PAGE_SELECT	0x1f
-#define	RTL8211F_LCR_ADDR	0x10
-#define	RTL8211F_EEELCR_ADDR	0x11
-
 /* Module parameters */
 #define TX_TIMEO	5000
 static int watchdog = TX_TIMEO;
@@ -151,6 +145,14 @@ static void stmmac_exit_fs(struct net_device *dev);
 #endif
 
 #define STMMAC_COAL_TIMER(x) (ns_to_ktime((x) * NSEC_PER_USEC))
+
+#define  LED_FIX  1
+#ifdef LED_FIX 
+#define RTL_8201F_PHY_ID  0x001cc816
+#define RTL_8211E_PHY_ID  0x001cc915
+#define RTL_8211F_PHY_ID  0x001cc916
+#define DP_83848_PHY_ID   0x20005c90
+#endif
 
 int stmmac_bus_clks_config(struct stmmac_priv *priv, bool enabled)
 {
@@ -2939,7 +2941,7 @@ static int stmmac_init_dma_engine(struct stmmac_priv *priv)
 		atds = 1;
 
 	msleep(1500);
-	
+
 	ret = stmmac_reset(priv, priv->ioaddr);
 	if (ret) {
 		dev_err(priv->device, "Failed to reset the dma\n");
@@ -3845,6 +3847,9 @@ static int __stmmac_open(struct net_device *dev,
 	priv->rx_copybreak = STMMAC_RX_COPYBREAK;
 
 	buf_sz = dma_conf->dma_buf_sz;
+	for (int i = 0; i < MTL_MAX_TX_QUEUES; i++)
+		if (priv->dma_conf.tx_queue[i].tbs & STMMAC_TBS_EN)
+			dma_conf->tx_queue[i].tbs = priv->dma_conf.tx_queue[i].tbs;
 	memcpy(&priv->dma_conf, dma_conf, sizeof(*dma_conf));
 
 	stmmac_reset_queues_param(priv);
@@ -5844,11 +5849,6 @@ static irqreturn_t stmmac_mac_interrupt(int irq, void *dev_id)
 	struct net_device *dev = (struct net_device *)dev_id;
 	struct stmmac_priv *priv = netdev_priv(dev);
 
-	if (unlikely(!dev)) {
-		netdev_err(priv->dev, "%s: invalid dev pointer\n", __func__);
-		return IRQ_NONE;
-	}
-
 	/* Check if adapter is up */
 	if (test_bit(STMMAC_DOWN, &priv->state))
 		return IRQ_HANDLED;
@@ -5863,11 +5863,6 @@ static irqreturn_t stmmac_safety_interrupt(int irq, void *dev_id)
 {
 	struct net_device *dev = (struct net_device *)dev_id;
 	struct stmmac_priv *priv = netdev_priv(dev);
-
-	if (unlikely(!dev)) {
-		netdev_err(priv->dev, "%s: invalid dev pointer\n", __func__);
-		return IRQ_NONE;
-	}
 
 	/* Check if adapter is up */
 	if (test_bit(STMMAC_DOWN, &priv->state))
@@ -5889,11 +5884,6 @@ static irqreturn_t stmmac_msi_intr_tx(int irq, void *data)
 
 	dma_conf = container_of(tx_q, struct stmmac_dma_conf, tx_queue[chan]);
 	priv = container_of(dma_conf, struct stmmac_priv, dma_conf);
-
-	if (unlikely(!data)) {
-		netdev_err(priv->dev, "%s: invalid dev pointer\n", __func__);
-		return IRQ_NONE;
-	}
 
 	/* Check if adapter is up */
 	if (test_bit(STMMAC_DOWN, &priv->state))
@@ -5920,11 +5910,6 @@ static irqreturn_t stmmac_msi_intr_rx(int irq, void *data)
 
 	dma_conf = container_of(rx_q, struct stmmac_dma_conf, rx_queue[chan]);
 	priv = container_of(dma_conf, struct stmmac_priv, dma_conf);
-
-	if (unlikely(!data)) {
-		netdev_err(priv->dev, "%s: invalid dev pointer\n", __func__);
-		return IRQ_NONE;
-	}
 
 	/* Check if adapter is up */
 	if (test_bit(STMMAC_DOWN, &priv->state))
@@ -7105,48 +7090,111 @@ void stmmac_fpe_handshake(struct stmmac_priv *priv, bool enable)
 	}
 }
 
+#ifdef LED_FIX 
+static int phy_dp83848_led_fixup(struct phy_device *phydev)
+{
+        int value;
+
+	if (phydev->phy_id != DP_83848_PHY_ID)
+		return 0;
+
+        printk("%s in\n", __func__);
+
+	value = phy_read(phydev, 0x18);
+	value &= ~(1<<2);
+	phy_write(phydev, 0x18, value);
+
+	value = phy_read(phydev, 0x19);
+	value &= ~(1<<5);
+	phy_write(phydev, 0x19, value);
+
+	return 0;
+}
+
+static int phy_rtl8201f_led_fixup(struct phy_device *phydev)
+{
+	int value;
+
+	printk("%s in\n", __func__);
+
+	/* switch to page 7 */
+	value = phy_read(phydev, 31);
+	value &= 0xff00;
+	value |= 0x0007;
+	value = phy_write(phydev, 31, value);
+
+	/* set customized led enable */
+	value = phy_read(phydev, 19);
+	value |= (0x1<<3);
+	phy_write(phydev, 19, value);
+
+	value &= 0x0000;
+	value |= (0x1<<1);
+	value |= (0x1<<7);
+	phy_write(phydev, 17, value);
+
+	/* back to page 0 */
+	value = phy_read(phydev, 31);
+	value &= 0x0000;
+	value = phy_write(phydev, 31, value);
+
+	return 0;
+}
+
+static int phy_rtl8211e_led_fixup(struct phy_device *phydev)
+{
+	int val;
+
+	printk("%s in\n", __func__);
+	val = phy_read(phydev, 3);
+	printk("%s in  val=0x%04x\n", __func__, val);
+
+	/*switch to extension page44*/
+	phy_write(phydev, 31, 0x07);
+	phy_write(phydev, 30, 0x2c);
+
+	/*set led1(yellow) act*/
+	val = phy_read(phydev, 26);
+	val &= (~(1<<4));// bit4=0
+	val |= (1<<5);// bit5=1
+	val &= (~(1<<6));// bit6=0
+	phy_write(phydev, 26, val);
+
+	/*set led0(green) link*/
+	val = phy_read(phydev, 28);
+	val |= (7<<0);// bit0,1,2=1
+	val &= (~(7<<4));// bit4,5,6=0
+	val &= (~(7<<8));// bit8,9,10=0
+	phy_write(phydev, 28, val);
+
+	/*switch back to page0*/
+	phy_write(phydev,31,0x00);
+
+	return 0;
+}
+
 static int phy_rtl8211f_led_fixup(struct phy_device *phydev)
 {
-	u32 val, val2;
+	int val;
 
-	/* Switch to Page 0x0d04 */
-	phy_write(phydev, RTL8211F_PAGE_SELECT, 0x0d04);
+	printk("%s in\n", __func__);
 
-	/* Set LED1(Green) Link 10/100/1000M + Active, and set LED2(Yellow) Link 10/100/1000M */
-	val = phy_read(phydev, RTL8211F_LCR_ADDR);
-	val |= (1<<5);
-	val |= (1<<8);
-	val |= (1<<10);
-	val |= (1<<11);
-	val &= (~(1<<14));
-	phy_write(phydev, RTL8211F_LCR_ADDR, val);
+	val = phy_read(phydev, 31);
+	printk("%s in  val=0x%04x\n", __func__, val);
+	
+	/*switch to extension page31*/
+	phy_write(phydev, 31, 0xd04);
 
-	/* Disable LED2(Yellow) EEE LED function to keep it on when linked */
-	val2 = phy_read(phydev, RTL8211F_EEELCR_ADDR);
-	val2 &= (~(1<<3));
-	phy_write(phydev, RTL8211F_EEELCR_ADDR, val2);
+	//phy_write(phydev, 0x10, 0x6d60);   /*led1-green led2-yellow */
+	phy_write(phydev, 0x10, 0xc160);   /*led1-green led2-yellow */
+	phy_write(phydev, 0x11, 0x8);  
 
-	/* Switch back to the PHY's IEEE Standard Registers. Here it is Page 0 */
-	phy_write(phydev, RTL8211F_PAGE_SELECT, 0);
+	/*switch back to page0*/
+	phy_write(phydev,31,0x0);
 
 	return 0;
 }
-
-static int phy_rtl8211f_eee_fixup(struct phy_device *phydev)
-{
-	phy_write(phydev, 31, 0x0000);
-	phy_write(phydev,  0, 0x8000);
-	mdelay(20);
-	phy_write(phydev, 31, 0x0a4b);
-	phy_write(phydev, 17, 0x1110);
-	phy_write(phydev, 31, 0x0000);
-	phy_write(phydev, 13, 0x0007);
-	phy_write(phydev, 14, 0x003c);
-	phy_write(phydev, 13, 0x4007);
-	phy_write(phydev, 14, 0x0000);
-
-	return 0;
-}
+#endif
 
 /**
  * stmmac_dvr_probe
@@ -7240,6 +7288,9 @@ int stmmac_dvr_probe(struct device *device,
 	if (ret == -ENOTSUPP)
 		dev_err(priv->device, "unable to bring out of ahb reset: %pe\n",
 			ERR_PTR(ret));
+
+	/* Wait a bit for the reset to take effect */
+	udelay(10);
 
 	/* Init MAC and get the capabilities */
 	ret = stmmac_hw_init(priv);
@@ -7417,6 +7468,22 @@ int stmmac_dvr_probe(struct device *device,
 		goto error_netdev_register;
 	}
 
+#ifdef LED_FIX 
+/* register the PHY board fixup */
+ret = phy_register_fixup_for_uid(RTL_8211E_PHY_ID, 0xffffffff, phy_rtl8211e_led_fixup);
+if (ret)
+	pr_warn("Cannot register PHY board fixup.\n");
+ret = phy_register_fixup_for_uid(RTL_8211F_PHY_ID, 0xffffffff, phy_rtl8211f_led_fixup);
+if (ret)
+	pr_warn("Cannot register PHY board fixup.\n");
+ret = phy_register_fixup_for_uid(RTL_8201F_PHY_ID, 0xffffffff, phy_rtl8201f_led_fixup);
+if (ret)
+	pr_warn("Cannot register PHY board fixup.\n");
+ret = phy_register_fixup_for_uid(DP_83848_PHY_ID, 0xffffffff, phy_dp83848_led_fixup);
+if (ret)
+	pr_warn("Cannot register PHY board fixup.\n");
+#endif
+
 #ifdef CONFIG_DEBUG_FS
 	stmmac_init_fs(ndev);
 #endif
@@ -7428,18 +7495,6 @@ int stmmac_dvr_probe(struct device *device,
 	 * If CONFIG_PM is not enabled, the clocks will stay powered.
 	 */
 	pm_runtime_put(device);
-
-	/* Register fixup for PHY RTL8211F */
-	ret = phy_register_fixup_for_uid(RTL8211F_PHY_UID, RTL8211F_PHY_UID_MASK, phy_rtl8211f_led_fixup);
-	if (ret) {
-		dev_warn(priv->device, "Failed to register fixup for PHY RTL8211F.\n");
-	}
-
-	/* Register fixup for PHY RTL8211F disabling EEE */
-	ret = phy_register_fixup_for_uid(RTL8211F_PHY_UID, RTL8211F_PHY_UID_MASK, phy_rtl8211f_eee_fixup);
-	if (ret) {
-		dev_warn(priv->device, "Failed to register fixup for PHY RTL8211F disabling EEE.\n");
-	}
 
 	return ret;
 
@@ -7548,6 +7603,9 @@ int stmmac_suspend(struct device *dev)
 							 false);
 		stmmac_mac_set(priv, priv->ioaddr, false);
 		pinctrl_pm_select_sleep_state(priv->device);
+		/* Make the phy into suspend state */
+		if (priv->mii)
+			stmmac_mdio_idle(priv->mii);
 	}
 
 	mutex_unlock(&priv->lock);

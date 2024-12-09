@@ -31,6 +31,8 @@ static struct rockchip_pll_rate_table rk3562_pll_rates[] = {
 	RK3036_PLL_RATE(1000000000, 3, 250, 2, 1, 1, 0),
 	RK3036_PLL_RATE(912000000, 1, 76, 2, 1, 1, 0),
 	RK3036_PLL_RATE(816000000, 1, 68, 2, 1, 1, 0),
+	RK3036_PLL_RATE(705600000, 2, 235, 4, 1, 0, 3355443),
+	RK3036_PLL_RATE(611520000, 4, 611, 6, 1, 0, 8724152),
 	RK3036_PLL_RATE(600000000, 1, 100, 4, 1, 1, 0),
 	RK3036_PLL_RATE(594000000, 1, 99, 4, 1, 1, 0),
 	RK3036_PLL_RATE(500000000, 1, 125, 6, 1, 1, 0),
@@ -59,8 +61,8 @@ static struct rockchip_pll_clock rk3562_pll_clks[] = {
 #define RK3562_CPUCLK_RATE(_rate, _aclk_m_core, _pclk_dbg)	\
 {								\
 	.rate = _rate##U,					\
-	.aclk_div = (_aclk_m_core) - 1,				\
-	.pclk_div = (_pclk_dbg) - 1,				\
+	.aclk_div = _aclk_m_core,				\
+	.pclk_div = _pclk_dbg,					\
 }
 
 static struct rockchip_cpu_rate_table rk3562_cpu_rates[] = {
@@ -1166,7 +1168,7 @@ static ulong rk3562_vop_get_rate(struct rk3562_clk_priv *priv, ulong clk_id)
 	return DIV_TO_RATE(prate, div);
 }
 
-#define RK3562_VOP_PLL_LIMIT_FREQ 600000000
+#define RK3562_VOP_PLL_LIMIT_FREQ 594000000
 
 static ulong rk3562_vop_set_rate(struct rk3562_clk_priv *priv, ulong clk_id,
 				 ulong rate)
@@ -1198,6 +1200,8 @@ static ulong rk3562_vop_set_rate(struct rk3562_clk_priv *priv, ulong clk_id,
 		return rk3562_vop_get_rate(priv, clk_id);
 	case DCLK_VOP:
 		div = DIV_ROUND_UP(RK3562_VOP_PLL_LIMIT_FREQ, rate);
+		if (div % 2)
+			div = div + 1;
 		rk_clrsetreg(&cru->clksel_con[30],
 			     DCLK_VOP_SEL_MASK | DCLK_VOP_DIV_MASK,
 			     DCLK_VOP_SEL_VPLL << DCLK_VOP_SEL_SHIFT |
@@ -1459,6 +1463,9 @@ static ulong rk3562_clk_get_rate(struct clk *clk)
 	case CLK_GMAC_ETH_OUT2IO:
 	case CLK_MAC100_50M_MATRIX:
 		rate = rk3562_gmac_get_rate(priv, clk->id);
+		break;
+	case CLK_WDTNS:
+		rate = OSC_HZ;
 		break;
 	default:
 		return -ENOENT;
@@ -1789,7 +1796,7 @@ static void rk3562_clk_init(struct rk3562_clk_priv *priv)
 					      priv->cru, APLL);
 
 	if (!priv->armclk_init_hz) {
-#ifdef CONFIG_SPL_BUILD
+#if defined(CONFIG_SPL_BUILD) || defined(CONFIG_SUPPORT_USBPLUG)
 		ret = rk3562_armclk_set_rate(priv, APLL_HZ);
 		if (!ret)
 			priv->armclk_init_hz = APLL_HZ;

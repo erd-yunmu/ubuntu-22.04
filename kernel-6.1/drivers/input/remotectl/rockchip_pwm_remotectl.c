@@ -118,8 +118,6 @@ struct rkxx_remotectl_drvdata {
 	struct timer_list timer;
 	struct tasklet_struct remote_tasklet;
 	struct wake_lock remotectl_wake_lock;
-	int keymode; /* DPAD (0) or REL_X/Y (1-3) */
-	u64 timestamp;
 	const struct rk_remote_pwm_data *pwm_data;
 };
 
@@ -193,77 +191,16 @@ static int remotectl_keycode_lookup(struct rkxx_remotectl_drvdata *ddata)
 {
 	int i;
 	unsigned char keydata = (unsigned char)((ddata->scandata >> 8) & 0xff);
-	int ret = 0;
 
 	for (i = 0; i < remotectl_button[ddata->keynum].nbuttons; i++) {
 		if (remotectl_button[ddata->keynum].key_table[i].scancode ==
 		    keydata) {
 			ddata->keycode =
 			remotectl_button[ddata->keynum].key_table[i].keycode;
-			ret = 1;
-			break;
+			return 1;
 		}
 	}
-
-	if (ddata->keycode == KEY_MODE) {
-		ddata->keymode = (ddata->keymode + 1) % 3;
-	} else if (ddata->keymode > 0) {
-		int rel, val;
-		u64 ts = ddata->timestamp;
-		ddata->timestamp = ktime_get_ns();
-
-		ts = (ddata->timestamp - ts) >> 24;  /* in 16.7ms */
-		if (ts < 15)
-			val = 80;
-		else if (ts < 25)
-			val = 43;
-		else if (ts < 60)
-			val = 16;
-		else if (ts < 120)
-			val = 5;
-		/* quicker key event means faster move speed */
-		DBG("delta = %llu, rel = %d\n", ts, val);
-
-		switch (ddata->keycode) {
-		case KEY_LEFT:
-			rel = REL_X; val *= -ddata->keymode;
-			break;
-		case KEY_RIGHT:
-			rel = REL_X; val *=  ddata->keymode;
-			break;
-		case KEY_UP:
-			rel = REL_Y; val *= -ddata->keymode;
-			break;
-		case KEY_DOWN:
-			rel = REL_Y; val *=  ddata->keymode;
-			break;
-		case KEY_VOLUMEDOWN:
-			rel = REL_WHEEL; val = -ddata->keymode;
-			break;
-		case KEY_VOLUMEUP:
-			rel = REL_WHEEL; val =  ddata->keymode;
-			break;
-		/* remapping some keys for mouse mode */
-		case KEY_SYSRQ:
-			ddata->keycode = 204;
-			return ret;
-		case KEY_MENU:
-			ddata->keycode = BTN_RIGHT;
-			return ret;
-		case 232:
-		case KEY_ENTER:
-			ddata->keycode = BTN_LEFT;
-			fallthrough;
-		default:
-			return ret;
-		}
-
-		input_report_rel(ddata->input, rel, val);
-		input_sync(ddata->input);
-		return 0;
-	}
-
-	return ret;
+	return 0;
 }
 
 static int rk_remotectl_get_irkeybd_count(struct platform_device *pdev)
@@ -1028,11 +965,6 @@ static int rk_pwm_probe(struct platform_device *pdev)
 			input_set_capability(input, EV_KEY, keycode);
 		}
 	}
-	input_set_capability(input, EV_REL, REL_X);
-	input_set_capability(input, EV_REL, REL_Y);
-	input_set_capability(input, EV_REL, REL_WHEEL);
-	input_set_capability(input, EV_KEY, BTN_LEFT);
-	input_set_capability(input, EV_KEY, BTN_RIGHT);
 	ret = input_register_device(input);
 	if (ret)
 		dev_err(&pdev->dev, "register input device err, ret=%d\n", ret);

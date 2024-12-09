@@ -1,0 +1,116 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2021 Rockchip Electronics Co., Ltd
+ *
+ */
+
+/dts-v1/;
+#include "rk3588.dtsi"
+#include "rk3588-u-boot.dtsi"
+#include <dt-bindings/input/input.h>
+
+/ {
+	model = "Embedfire LubanCat-5IO";
+	compatible = "rockchip,rk3588s-lubancat-5io", "rockchip,rk3588";
+
+	vcc12v_dcin: vcc12v-dcin {
+		u-boot,dm-pre-reloc;
+		compatible = "regulator-fixed";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <12000000>;
+		regulator-max-microvolt = <12000000>;
+		regulator-name = "vcc12v_dcin";
+	};
+
+	vcc4v0_sys: vcc4v0-sys {
+		u-boot,dm-pre-reloc;
+		compatible = "regulator-fixed";
+		regulator-name = "vcc4v0_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <4000000>;
+		regulator-max-microvolt = <4000000>;
+		vin-supply = <&vcc12v_dcin>;
+	};
+
+	vcc_5v0_s0: vcc-5v0-s0 {
+		u-boot,dm-pre-reloc;
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_5v0_s0";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&vcc12v_dcin>;
+	};
+
+	adc-keys {
+		compatible = "adc-keys";
+		io-channels = <&saradc 1>;
+		io-channel-names = "buttons";
+		keyup-threshold-microvolt = <1800000>;
+		u-boot,dm-pre-reloc;
+		status = "okay";
+
+		volumeup-key {
+			u-boot,dm-pre-reloc;
+			linux,code = <KEY_VOLUMEUP>;
+			label = "volume up";
+			press-threshold-microvolt = <1750>;
+		};
+	};
+};
+
+&pcie30phy {
+	u-boot,dm-pre-reloc;
+	status = "okay";
+};
+
+&sfc {
+	status = "disabled";
+	pinctrl-names = "default";
+	pinctrl-0 = <&fspim0_pins>;
+};
+
+&spi_nor {
+	status = "disabled";
+};
+
+&pinctrl {
+
+	/delete-node/ fspi;
+	fspi {
+		u-boot,dm-spl;
+		fspim0_pins: fspim0-pins {
+			u-boot,dm-spl;
+			rockchip,pins =
+				/* fspi_clk_m0 */
+				<2 RK_PA0 2 &pcfg_pull_none>,
+				/* fspi_cs0n_m0 */
+				<2 RK_PD6 2 &pcfg_pull_none>,
+				/* fspi_d0_m0 */
+				<2 RK_PD0 2 &pcfg_pull_none>,
+				/* fspi_d1_m0 */
+				<2 RK_PD1 2 &pcfg_pull_none>,
+				/* fspi_d2_m0 */
+				<2 RK_PD2 2 &pcfg_pull_none>,
+				/* fspi_d3_m0 */
+				<2 RK_PD3 2 &pcfg_pull_none>;
+		};
+	};
+
+	power {
+		u-boot,dm-spl;
+		vcc_5v0_en: vcc-5v0-en {
+			u-boot,dm-spl;
+			rockchip,pins = <4 RK_PA3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};
+
+&pcie3x4 {
+	u-boot,dm-pre-reloc;
+	reset-gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_HIGH>;
+	status = "okay";
+};

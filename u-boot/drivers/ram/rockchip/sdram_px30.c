@@ -489,6 +489,7 @@ static int dram_detect_cap(struct dram_info *dram,
 			   struct px30_sdram_params *sdram_params,
 			   unsigned char channel)
 {
+	void __iomem *pctl_base = dram->pctl;
 	struct sdram_cap_info *cap_info = &sdram_params->ch.cap_info;
 
 	/*
@@ -515,7 +516,7 @@ static int dram_detect_cap(struct dram_info *dram,
 
 		if (sdram_detect_col(cap_info, coltmp) != 0)
 			goto cap_err;
-		sdram_detect_bank(cap_info, coltmp, bktmp);
+		sdram_detect_bank(cap_info, pctl_base, coltmp, bktmp);
 		sdram_detect_dbw(cap_info, dram_type);
 	} else {
 		/* detect bg for ddr4 */
@@ -527,7 +528,7 @@ static int dram_detect_cap(struct dram_info *dram,
 		bk = 2;
 		cap_info->col = col;
 		cap_info->bk = bk;
-		sdram_detect_bg(cap_info, coltmp);
+		sdram_detect_bg(cap_info, pctl_base, coltmp);
 	}
 
 	/* detect row */

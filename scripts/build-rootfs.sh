@@ -112,9 +112,12 @@ cat << EOF | chroot ${chroot_dir} /bin/bash
 set -eE 
 trap 'echo Error: in $0 on line $LINENO' ERR
 
-# Update localisation files
-locale-gen en_US.UTF-8
-update-locale LANG="en_US.UTF-8"
+# Set zh_CN=中文简体 localization
+export LANGUAGE="zh_CN"
+export LANG="zh_CN.UTF-8"
+localedef -c -f UTF-8 -i zh_CN zh_CN.UTF-8
+locale-gen zh_CN.UTF-8
+update-locale LANG="zh_CN.UTF-8"
 
 HOST=lubancat
 
@@ -308,6 +311,19 @@ rockchip-mpp-demos librga2 librga-dev libegl-mesa0 libegl1-mesa-dev libgbm-dev g
 libgl1-mesa-dev libgles2-mesa-dev libglx-mesa0 mesa-common-dev mesa-vulkan-drivers \
 mesa-utils libwidevinecdm libcanberra-pulse gnome-software language-pack-zh-han*
 
+export LANGUAGE="zh_CN"
+export LANG="zh_CN.UTF-8"
+localedef -c -f UTF-8 -i zh_CN zh_CN.UTF-8
+locale-gen zh_CN.UTF-8
+update-locale LANG="zh_CN.UTF-8"
+
+# Install the zh_CN language support package
+apt-get -y install language-pack-gnome-zh-hant libreoffice-l10n-zh-cn libreoffice-help-zh-cn \
+fonts-arphic-uming thunderbird-locale-zh-cn gnome-user-docs-zh-hans thunderbird-locale-zh-tw \
+ibus-table-quick-classic fonts-arphic-ukai ibus-table-cangjie5 fonts-noto-cjk-extra ibus-chewing \
+thunderbird-locale-zh-hant language-pack-gnome-zh-hans ibus-table-cangjie3 ibus-table-wubi \
+thunderbird-locale-zh-hans ibus-libpinyin libreoffice-help-zh-tw libreoffice-l10n-zh-tw
+
 # Remove cloud-init and landscape-common
 apt-get -y purge cloud-init landscape-common cryptsetup-initramfs
 
@@ -398,6 +414,7 @@ EOF
 echo "MUTTER_DEBUG_ENABLE_ATOMIC_KMS=0" >> ${chroot_dir}/etc/environment
 echo "MUTTER_DEBUG_FORCE_KMS_MODE=simple" >> ${chroot_dir}/etc/environment
 echo "CLUTTER_PAINT=disable-dynamic-max-render-time" >> ${chroot_dir}/etc/environment
+# 👆 If you build the 24.04 system, please comment out the code to prevent the login from getting stuck on the desktop.😊
 
 # Update initramfs
 chroot ${chroot_dir} /bin/bash -c "update-initramfs -u"

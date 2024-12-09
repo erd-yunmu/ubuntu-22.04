@@ -265,4 +265,6 @@ u32 pctl_remodify_sdram_params(struct ddr_pctl_regs *pctl_regs,
 int pctl_cfg(void __iomem *pctl_base, struct ddr_pctl_regs *pctl_regs,
 	     u32 sr_idle, u32 pd_idle);
 
+void send_a_refresh(void __iomem *pctl_base, u32 cs);
+
 #endif

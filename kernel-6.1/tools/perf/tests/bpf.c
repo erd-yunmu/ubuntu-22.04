@@ -29,12 +29,11 @@
 
 static int epoll_pwait_loop(void)
 {
-	struct epoll_event events;
-    int i;
+	int i;
 
 	/* Should fail NR_ITERS times */
 	for (i = 0; i < NR_ITERS; i++)
-		epoll_pwait(-(i + 1), &events, 0, 0, NULL);
+		epoll_pwait(-(i + 1), NULL, 0, 0, NULL);
 	return 0;
 }
 

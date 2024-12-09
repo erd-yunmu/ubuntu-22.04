@@ -33,6 +33,11 @@
 	status = "okay";
 };
 
+&combphy0_us {
+	u-boot,dm-pre-reloc;
+	status = "okay";
+};
+
 &crypto {
 	u-boot,dm-spl;
 };
@@ -48,6 +53,14 @@
 &grf {
 	u-boot,dm-spl;
 	status = "okay";
+};
+
+&pipegrf {
+	u-boot,dm-pre-reloc;
+};
+
+&pipe_phy_grf0 {
+	u-boot,dm-pre-reloc;
 };
 
 &pmugrf {
@@ -128,6 +141,10 @@
 &its {
 	u-boot,dm-pre-reloc;
 	status = "okay";
+};
+
+&otp {
+	u-boot,dm-spl;
 };
 
 &pipegrf {
@@ -417,7 +434,7 @@
 };
 
 &pinctrl {
-	u-boot,dm-pre-reloc;
+	u-boot,dm-spl;
 	status = "okay";
 };
 

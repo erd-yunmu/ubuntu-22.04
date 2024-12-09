@@ -428,7 +428,7 @@ static u64 dram_detect_cap(struct dram_info *dram,
 
 		if (sdram_detect_col(cap_info, coltmp) != 0)
 			goto cap_err;
-		sdram_detect_bank(cap_info, coltmp, bktmp);
+		sdram_detect_bank(cap_info, dram->pctl, coltmp, bktmp);
 		sdram_detect_dbw(cap_info, dram_type);
 	} else {
 		/* detect bg for ddr4 */
@@ -440,7 +440,7 @@ static u64 dram_detect_cap(struct dram_info *dram,
 		bk = 2;
 		cap_info->col = col;
 		cap_info->bk = bk;
-		sdram_detect_bg(cap_info, coltmp);
+		sdram_detect_bg(cap_info, dram->pctl, coltmp);
 	}
 
 	/* detect row */

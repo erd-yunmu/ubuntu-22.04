@@ -27,6 +27,10 @@
 
 };
 
+&otp {
+	u-boot,dm-spl;
+};
+
 &grf {
 	u-boot,dm-spl;
 	status = "okay";
@@ -37,15 +41,19 @@
 	status = "okay";
 };
 
+&combphy_pu {
+	u-boot,dm-pre-reloc;
+	status = "okay";
+};
+
 &cru {
+	/delete-property/ assigned-clocks;
+	/delete-property/ assigned-clock-rates;
 	u-boot,dm-spl;
 	status = "okay";
 };
 
 &crypto {
-	clocks = <&scmi_clk SCMI_CORE_CRYPTO>, <&scmi_clk SCMI_PKA_CRYPTO>;
-	clock-names = "sclk", "pka";
-	clock-frequency = <200000000>, <300000000>;
 	u-boot,dm-spl;
 	status = "okay";
 };
@@ -99,6 +107,8 @@
 &sdhci {
 	bus-width = <8>;
 	u-boot,dm-spl;
+	/delete-property/ assigned-clocks;
+	/delete-property/ assigned-clock-rates;
 	/delete-property/ pinctrl-names;
 	/delete-property/ pinctrl-0;
 	mmc-hs400-1_8v;
@@ -158,6 +168,16 @@
 
 &gpio2 {
 	u-boot,dm-spl;
+};
+
+/* Avaliable for PCIe */
+&gpio3 {
+	u-boot,dm-pre-reloc;
+};
+
+/* Avaliable for PCIe */
+&gpio4 {
+	u-boot,dm-pre-reloc;
 };
 
 &pcfg_pull_none_drv_level_1 {

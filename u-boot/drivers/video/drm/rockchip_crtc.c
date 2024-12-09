@@ -20,6 +20,7 @@
 #include "rockchip_crtc.h"
 #include "rockchip_connector.h"
 
+#ifndef CONFIG_SPL_BUILD
 static const struct udevice_id rockchip_vp_ids[] = {
 	{ .compatible = "rockchip-vp" },
 	{ }
@@ -111,6 +112,11 @@ static const struct rockchip_crtc rk3328_vop_data = {
 	.data = &rk3328_vop,
 };
 
+static const struct rockchip_crtc rk3506_vop_data = {
+	.funcs = &rockchip_vop_funcs,
+	.data = &rk3506_vop,
+};
+
 static const struct rockchip_crtc rk3528_vop_data = {
 	.funcs = &rockchip_vop2_funcs,
 	.data = &rk3528_vop,
@@ -124,6 +130,16 @@ static const struct rockchip_crtc rk3562_vop_data = {
 static const struct rockchip_crtc rk3568_vop_data = {
 	.funcs = &rockchip_vop2_funcs,
 	.data = &rk3568_vop,
+};
+
+static const struct rockchip_crtc rk3576_vop_data = {
+	.funcs = &rockchip_vop2_funcs,
+	.data = &rk3576_vop,
+};
+
+static const struct rockchip_crtc rk3576_vop_lit_data = {
+	.funcs = &rockchip_vop_funcs,
+	.data = &rk3576_vop_lit,
 };
 
 static const struct rockchip_crtc rk3588_vop_data = {
@@ -184,6 +200,9 @@ static const struct udevice_id rockchip_vop_ids[] = {
 		.compatible = "rockchip,rk3328-vop",
 		.data = (ulong)&rk3328_vop_data,
 	}, {
+		.compatible = "rockchip,rk3506-vop",
+		.data = (ulong)&rk3506_vop_data,
+	}, {
 		.compatible = "rockchip,rk3528-vop",
 		.data = (ulong)&rk3528_vop_data,
 	}, {
@@ -192,6 +211,12 @@ static const struct udevice_id rockchip_vop_ids[] = {
 	}, {
 		.compatible = "rockchip,rk3568-vop",
 		.data = (ulong)&rk3568_vop_data,
+	}, {
+		.compatible = "rockchip,rk3576-vop",
+		.data = (ulong)&rk3576_vop_data,
+	}, {
+		.compatible = "rockchip,rk3576-vop-lit",
+		.data = (ulong)&rk3576_vop_lit_data,
 	}, {
 		.compatible = "rockchip,rk3588-vop",
 		.data = (ulong)&rk3588_vop_data,
@@ -202,6 +227,13 @@ static int rockchip_vop_probe(struct udevice *dev)
 {
 	struct udevice *child;
 	int ret;
+
+	/* Process 'assigned-{clocks/clock-parents/clock-rates}' properties */
+	ret = clk_set_defaults(dev);
+	if (ret) {
+		dev_err(dev, "%s clk_set_defaults failed %d\n", __func__, ret);
+		return ret;
+	}
 
 	for (device_find_first_child(dev, &child);
 	     child;
@@ -253,3 +285,19 @@ UCLASS_DRIVER(rockchip_crtc) = {
 	.id		= UCLASS_VIDEO_CRTC,
 	.name		= "CRTC",
 };
+
+#else
+static struct rockchip_crtc rk3528_vop_data = {
+	.funcs = &rockchip_vop2_funcs,
+	.data = &rk3528_vop,
+};
+
+int rockchip_spl_vop_probe(struct crtc_state *crtc_state)
+{
+
+	crtc_state->crtc = &rk3528_vop_data;
+
+	return 0;
+}
+#endif
+

@@ -12,7 +12,6 @@
 #define COUNTER_FREQUENCY		24000000
 #define CONFIG_SYS_MALLOC_LEN		(32 << 20)
 #define CONFIG_SYS_CBSIZE		1024
-#define CONFIG_SKIP_LOWLEVEL_INIT
 #define CONFIG_SYS_NS16550_MEM32
 
 #ifdef CONFIG_SUPPORT_USBPLUG
@@ -74,7 +73,8 @@
 	"scriptaddr1=0x00000000\0"	\
 	"pxefile_addr1_r=0x00100000\0"	\
 	"fdt_addr1_r=0x02f00000\0"	\
-	"kernel_addr1_r=0x02008000\0"	\
+	"kernel_addr1_r=0x00008000\0"	\
+	"kernel_addr1_c=0x02008000\0"	\
 	"ramdisk_addr1_r=0x03200000\0"
 
 /* memory size > 128MB */
@@ -82,7 +82,8 @@
 	"scriptaddr=0x00000000\0"	\
 	"pxefile_addr_r=0x00100000\0"	\
 	"fdt_addr_r=0x08300000\0"	\
-	"kernel_addr_r=0x02008000\0"	\
+	"kernel_addr_r=0x00008000\0"	\
+	"kernel_addr_c=0x02008000\0"	\
 	"ramdisk_addr_r=0x0a200000\0"
 
 #include <config_distro_bootcmd.h>
@@ -106,6 +107,7 @@
 #endif
 #endif
 
+#define CONFIG_LIB_HW_RAND
 #define CONFIG_PREBOOT
 
 #endif

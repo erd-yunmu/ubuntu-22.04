@@ -30,7 +30,7 @@ static void rtw89_wow_enter_lps(struct rtw89_dev *rtwdev)
 	struct ieee80211_vif *wow_vif = rtwdev->wow.wow_vif;
 	struct rtw89_vif *rtwvif = (struct rtw89_vif *)wow_vif->drv_priv;
 
-	rtw89_enter_lps(rtwdev, rtwvif, false);
+	rtw89_enter_lps(rtwdev, rtwvif);
 }
 
 static void rtw89_wow_leave_lps(struct rtw89_dev *rtwdev)
@@ -40,7 +40,6 @@ static void rtw89_wow_leave_lps(struct rtw89_dev *rtwdev)
 
 static int rtw89_wow_config_mac(struct rtw89_dev *rtwdev, bool enable_wow)
 {
-	const struct rtw89_mac_gen_def *mac = rtwdev->chip->mac_def;
 	int ret;
 
 	if (enable_wow) {
@@ -50,7 +49,7 @@ static int rtw89_wow_config_mac(struct rtw89_dev *rtwdev, bool enable_wow)
 			return ret;
 		}
 		rtw89_write32_set(rtwdev, R_AX_RX_FUNCTION_STOP, B_AX_HDR_RX_STOP);
-		rtw89_write32_clr(rtwdev, mac->rx_fltr, B_AX_SNIFFER_MODE);
+		rtw89_write32_clr(rtwdev, R_AX_RX_FLTR_OPT, B_AX_SNIFFER_MODE);
 		rtw89_mac_cfg_ppdu_status(rtwdev, RTW89_MAC_0, false);
 		rtw89_write32(rtwdev, R_AX_ACTION_FWD0, 0);
 		rtw89_write32(rtwdev, R_AX_ACTION_FWD1, 0);
@@ -92,7 +91,7 @@ static void rtw89_wow_show_wakeup_reason(struct rtw89_dev *rtwdev)
 	u32 wow_reason_reg;
 	u8 reason;
 
-	if (chip_id == RTL8852A || chip_id == RTL8852B || chip_id == RTL8851B)
+	if (chip_id == RTL8852A || chip_id == RTL8852B)
 		wow_reason_reg = R_AX_C2HREG_DATA3 + 3;
 	else
 		wow_reason_reg = R_AX_C2HREG_DATA3_V1 + 3;
@@ -421,11 +420,14 @@ static int rtw89_wow_cfg_wake(struct rtw89_dev *rtwdev, bool wow)
 	struct rtw89_vif *rtwvif = (struct rtw89_vif *)wow_vif->drv_priv;
 	struct ieee80211_sta *wow_sta;
 	struct rtw89_sta *rtwsta = NULL;
+	bool is_conn = true;
 	int ret;
 
 	wow_sta = ieee80211_find_sta(wow_vif, rtwvif->bssid);
 	if (wow_sta)
 		rtwsta = (struct rtw89_sta *)wow_sta->drv_priv;
+	else
+		is_conn = false;
 
 	if (wow) {
 		if (rtw_wow->pattern_cnt)
@@ -450,6 +452,12 @@ static int rtw89_wow_cfg_wake(struct rtw89_dev *rtwdev, bool wow)
 				  ret);
 			return ret;
 		}
+	}
+
+	ret = rtw89_fw_h2c_join_info(rtwdev, rtwvif, rtwsta, !is_conn);
+	if (ret) {
+		rtw89_warn(rtwdev, "failed to send h2c join info\n");
+		return ret;
 	}
 
 	ret = rtw89_fw_h2c_cam(rtwdev, rtwvif, rtwsta, NULL);
@@ -480,6 +488,21 @@ static int rtw89_wow_check_fw_status(struct rtw89_dev *rtwdev, bool wow_enable)
 		rtw89_err(rtwdev, "failed to check wow status %s\n",
 			  wow_enable ? "enabled" : "disabled");
 	return ret;
+}
+
+static void rtw89_wow_release_pkt_list(struct rtw89_dev *rtwdev)
+{
+	struct rtw89_wow_param *rtw_wow = &rtwdev->wow;
+	struct list_head *pkt_list = &rtw_wow->pkt_list;
+	struct rtw89_pktofld_info *info, *tmp;
+
+	list_for_each_entry_safe(info, tmp, pkt_list, list) {
+		rtw89_fw_h2c_del_pkt_offload(rtwdev, info->id);
+		rtw89_core_release_bit_map(rtwdev->pkt_offload,
+					   info->id);
+		list_del(&info->list);
+		kfree(info);
+	}
 }
 
 static int rtw89_wow_swap_fw(struct rtw89_dev *rtwdev, bool wow)
@@ -538,11 +561,6 @@ static int rtw89_wow_swap_fw(struct rtw89_dev *rtwdev, bool wow)
 	}
 
 	if (is_conn) {
-		ret = rtw89_fw_h2c_general_pkt(rtwdev, rtwvif, rtwsta->mac_id);
-		if (ret) {
-			rtw89_warn(rtwdev, "failed to send h2c general packet\n");
-			return ret;
-		}
 		rtw89_phy_ra_assoc(rtwdev, wow_sta);
 		rtw89_phy_set_bss_color(rtwdev, wow_vif);
 		rtw89_chip_cfg_txpwr_ul_tb_offset(rtwdev, wow_vif);
@@ -690,6 +708,8 @@ static int rtw89_wow_fw_stop(struct rtw89_dev *rtwdev)
 		goto out;
 	}
 
+	rtw89_wow_release_pkt_list(rtwdev);
+
 	ret = rtw89_fw_h2c_disconnect_detect(rtwdev, rtwvif, false);
 	if (ret) {
 		rtw89_err(rtwdev, "wow: failed to disable disconnect detect\n");
@@ -701,8 +721,6 @@ static int rtw89_wow_fw_stop(struct rtw89_dev *rtwdev)
 		rtw89_err(rtwdev, "wow: failed to disable config wake\n");
 		goto out;
 	}
-
-	rtw89_fw_release_general_pkt_list(rtwdev, true);
 
 	ret = rtw89_wow_check_fw_status(rtwdev, false);
 	if (ret) {
@@ -725,8 +743,6 @@ static int rtw89_wow_enable(struct rtw89_dev *rtwdev)
 		rtw89_err(rtwdev, "wow: failed to enable trx_pre\n");
 		goto out;
 	}
-
-	rtw89_fw_release_general_pkt_list(rtwdev, true);
 
 	ret = rtw89_wow_swap_fw(rtwdev, true);
 	if (ret) {

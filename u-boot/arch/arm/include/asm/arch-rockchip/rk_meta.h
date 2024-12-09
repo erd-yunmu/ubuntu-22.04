@@ -62,7 +62,6 @@
 #define RK_CMDLINE		0x4c444d43
 
 #define ITEM_SIZE		(1 * 1024)
-#define MAX_CMDLINE_LENGTH	(1024 / 2)
 #define MAX_HEAD_SIZE 4
 #define MAX_META_SEGMENT_SIZE (64 * 1024)
 #define BACKUP_META_SIZE (MAX_META_SEGMENT_SIZE / 2)
@@ -83,11 +82,20 @@
 #define SECONDARY_SENSOR_INIT_OFFSET	(APP_PARAM_OFFSET + APP_PARAM_MAX_SIZE)
 #define SECONDARY_SENSOR_INIT_MAX_SIZE	ITEM_SIZE
 
+#define WAKEUP_PARAM_OFFSET	(SECONDARY_SENSOR_INIT_OFFSET + SECONDARY_SENSOR_INIT_MAX_SIZE)
+#define WAKEUP_PARAM_MAX_SIZE	ITEM_SIZE
+
+#define WAKEUP_AOV_PARAM_OFFSET	(WAKEUP_PARAM_OFFSET + WAKEUP_PARAM_MAX_SIZE)
+#define WAKEUP_AOV_PARAM_MAX_SIZE	ITEM_SIZE
+
 #define SENSOR_IQ_BIN_OFFSET			(MAX_META_SEGMENT_SIZE)
 #define SENSOR_IQ_BIN_MAX_SIZE			(320 * 1024)
 
-/* 512 - sizeof(tag/load/size/comp_type/comp_size/comp_off/crc32/meta_flags) */
-#define	META_HEAD_RESERVED_SIZE	   (120*4)
+#define SECONDARY_SENSOR_IQ_BIN_OFFSET			(SENSOR_IQ_BIN_OFFSET + SENSOR_IQ_BIN_MAX_SIZE)
+#define SECONDARY_SENSOR_IQ_BIN_MAX_SIZE		(SENSOR_IQ_BIN_MAX_SIZE)
+
+/* 512 - sizeof(tag/load/size/comp_type/comp_size/comp_off/crc32/meta_flags/iq_item_size/total_part_num/part_flag/part_reserved_size) */
+#define	META_HEAD_RESERVED_SIZE	   (116*4)
 #define META_READ_DONE_FLAG (1 << 0)
 
 #define AE_TABLE_SHARE2KERNEL_OFFSET	(PARAM_SHARE2KERNEL_OFFSET)
@@ -101,11 +109,16 @@ struct meta_head {
 	uint32_t comp_type;
 	uint32_t comp_size;
 	uint32_t comp_off;
+	uint32_t iq_item_size;
+	uint32_t total_part_num;
+	uint32_t part_flag;
+	uint32_t part_reserved_size;
 	uint8_t  reserved[META_HEAD_RESERVED_SIZE];
 	uint32_t crc32;
 	uint32_t meta_flags;
 };
 
+#define MAX_CMDLINE_LENGTH	(ITEM_SIZE - 8) /* 1024 - sizeof(tag/crc32) */
 struct cmdline_info {
 	uint32_t tag;
 	uint8_t data[MAX_CMDLINE_LENGTH];

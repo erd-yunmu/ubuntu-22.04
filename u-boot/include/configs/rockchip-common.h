@@ -8,6 +8,10 @@
 #define _ROCKCHIP_COMMON_H_
 #include <linux/sizes.h>
 
+#ifndef CFG_CPUID_OFFSET
+#define CFG_CPUID_OFFSET		0x7
+#endif
+
 #define COUNTER_FREQUENCY               24000000
 
 #if CONFIG_IS_ENABLED(TINY_FRAMEWORK) && !defined(CONFIG_ARM64)
@@ -58,13 +62,27 @@
 	BOOT_TARGET_DEVICES_references_MTD_without_CONFIG_CMD_MTD_BLK
 #endif
 
-/* First try to boot from SD (index 1), then eMMC (index 0) */
+/* First try to boot from SD (index 1), then NVME (if CMD_NVME is enabled), then SCSI (if CMD_SCSI is enabled),then eMMC (index 0) */
 #if CONFIG_IS_ENABLED(CMD_MMC)
-	#define BOOT_TARGET_MMC(func) \
-		func(MMC, mmc, 1) \
-		func(MMC, mmc, 0)
+	#define BOOT_TARGET_EMMC(func)	func(MMC, mmc, 0)
+	#define BOOT_TARGET_SD(func)	func(MMC, mmc, 1)
 #else
-	#define BOOT_TARGET_MMC(func)
+	#define BOOT_TARGET_EMMC(func)
+	#define BOOT_TARGET_SD(func)
+#endif
+
+#if CONFIG_IS_ENABLED(CMD_NVME)
+	#define BOOT_TARGET_NVME(func)	\
+		func(NVME, nvme, 0)	\
+		func(NVME, nvme, 1)
+#else
+	#define BOOT_TARGET_NVME(func)
+#endif
+
+#if CONFIG_IS_ENABLED(CMD_SCSI)
+	#define BOOT_TARGET_SCSI(func)	func(SCSI, scsi, 0)
+#else
+	#define BOOT_TARGET_SCSI(func)
 #endif
 
 #if CONFIG_IS_ENABLED(CMD_MTD_BLK)
@@ -80,12 +98,6 @@
 	#define BOOT_TARGET_RKNAND(func) func(RKNAND, rknand, 0)
 #else
 	#define BOOT_TARGET_RKNAND(func)
-#endif
-
-#if CONFIG_IS_ENABLED(CMD_NVME)
-	#define BOOT_TARGET_NVME(func) func(NVME, nvme, 0)
-#else
-	#define BOOT_TARGET_NVME(func)
 #endif
 
 #if CONFIG_IS_ENABLED(CMD_USB)
@@ -107,11 +119,13 @@
 #endif
 
 #define BOOT_TARGET_DEVICES(func) \
+	BOOT_TARGET_USB(func) \
+	BOOT_TARGET_SD(func) \
 	BOOT_TARGET_NVME(func) \
-	BOOT_TARGET_MMC(func) \
+	BOOT_TARGET_SCSI(func) \
+	BOOT_TARGET_EMMC(func) \
 	BOOT_TARGET_MTD(func) \
 	BOOT_TARGET_RKNAND(func) \
-	BOOT_TARGET_USB(func) \
 	BOOT_TARGET_PXE(func) \
 	BOOT_TARGET_DHCP(func)
 
@@ -156,10 +170,14 @@
 
 #define RKIMG_DET_BOOTDEV \
 	"rkimg_bootdev=" \
-	"if nvme dev 0; then " \
-		"setenv devtype nvme; setenv devnum 0; echo Boot from nvme;" \
-	"elif mmc dev 1 && rkimgtest mmc 1; then " \
+	"if mmc dev 1 && rkimgtest mmc 1; then " \
 		"setenv devtype mmc; setenv devnum 1; echo Boot from SDcard;" \
+	"elif nvme dev 0; then " \
+		"setenv devtype nvme; setenv devnum 0; echo Boot from nvme;" \
+	"elif nvme dev 1; then " \
+		"setenv devtype nvme; setenv devnum 1; echo Boot from nvme;" \
+	"elif scsi dev 0; then " \
+		"setenv devtype scsi; setenv devnum 0; echo Boot from scsi;" \
 	"elif mmc dev 0; then " \
 		"setenv devtype mmc; setenv devnum 0;" \
 	"elif mtd_blk dev 0; then " \
@@ -197,5 +215,10 @@
 #define CONFIG_DISPLAY_BOARDINFO_LATE
 #define CONFIG_SYS_AUTOLOAD	"no"
 #define CONFIG_SPL_LOAD_FIT_ADDRESS		0x2000000
+
+/* Why? There is D-Cache coherent on share memory between U-Boot and OP-TEE. */
+#if defined(CONFIG_SYS_DCACHE_OFF) && defined(CONFIG_OPTEE_CLIENT)
+"ERROR: Please disable CONFIG_OPTEE_CLIENT when #define CONFIG_SYS_DCACHE_OFF !"
+#endif
 
 #endif /* _ROCKCHIP_COMMON_H_ */

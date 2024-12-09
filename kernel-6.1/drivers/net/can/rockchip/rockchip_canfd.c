@@ -549,7 +549,7 @@ static netdev_tx_t rockchip_canfd_start_xmit(struct sk_buff *skb,
 	if (cf->can_id & CAN_EFF_FLAG) {
 		/* Extended CAN ID format */
 		id = cf->can_id & CAN_EFF_MASK;
-		dlc = can_fd_dlc2len(cf->len) & DLC_MASK;
+		dlc = can_fd_len2dlc(cf->len) & DLC_MASK;
 		dlc |= FORMAT_MASK;
 
 		/* Extended frames remote TX request */
@@ -558,7 +558,7 @@ static netdev_tx_t rockchip_canfd_start_xmit(struct sk_buff *skb,
 	} else {
 		/* Standard CAN ID format */
 		id = cf->can_id & CAN_SFF_MASK;
-		dlc = can_fd_dlc2len(cf->len) & DLC_MASK;
+		dlc = can_fd_len2dlc(cf->len) & DLC_MASK;
 
 		/* Standard frames remote TX request */
 		if (cf->can_id & CAN_RTR_FLAG)
@@ -811,7 +811,6 @@ static irqreturn_t rockchip_canfd_interrupt(int irq, void *dev_id)
 	struct net_device *ndev = (struct net_device *)dev_id;
 	struct rockchip_canfd *rcan = netdev_priv(ndev);
 	struct net_device_stats *stats = &ndev->stats;
-	unsigned int dumy;
 	u32 err_int = ERR_WARN_INT | RX_BUF_OV_INT | PASSIVE_ERR_INT |
 		      BUS_ERR_INT | BUS_OFF_INT;
 	u32 isr;
@@ -822,12 +821,6 @@ static irqreturn_t rockchip_canfd_interrupt(int irq, void *dev_id)
 	if (isr & TX_FINISH_INT) {
 		cancel_delayed_work(&rcan->tx_err_work);
 		dlc = rockchip_canfd_read(rcan, CAN_TXFIC);
-		/* transmission complete interrupt */
-		if (dlc & FDF_MASK)
-			stats->tx_bytes += can_fd_dlc2len(dlc & DLC_MASK);
-		else
-			stats->tx_bytes += (dlc & DLC_MASK);
-		stats->tx_packets++;
 		if (rcan->txtorx && rcan->mode <= ROCKCHIP_RK3568_CAN_MODE && dlc & FORMAT_MASK) {
 			rockchip_canfd_write(rcan, CAN_TX_CHECK_FIC, FORMAT_MASK);
 			quota = rockchip_canfd_get_rx_fifo_cnt(ndev);
@@ -844,7 +837,8 @@ static irqreturn_t rockchip_canfd_interrupt(int irq, void *dev_id)
 					     0, 5000000, false, rcan, CAN_CMD))
 			netdev_err(ndev, "Warning: wait tx req timeout!\n");
 		rockchip_canfd_write(rcan, CAN_CMD, 0);
-		dumy = can_get_echo_skb(ndev, 0, NULL);
+		stats->tx_bytes += can_get_echo_skb(ndev, 0, NULL);
+		stats->tx_packets++;
 		netif_wake_queue(ndev);
 	}
 

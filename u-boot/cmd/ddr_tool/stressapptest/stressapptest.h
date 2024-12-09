@@ -20,6 +20,7 @@
 #define __CMD_DDR_TOOL_STRESSAPPTEST_STRESSAPPTEST_H
 
 struct stressapptest_params {
+	ulong total_start_addr;
 	ulong total_test_size_mb;
 	/* total_test_size = page_size * page_num */
 	ulong page_size_byte;
@@ -65,6 +66,5 @@ struct page {
 extern void secondary_init(void);
 extern void lock_byte_mutex(u32 *flag);
 extern u32 unlock_byte_mutex(u32 *flag);
-extern u32 get_cpu_id(void);
 
 #endif /* __CMD_DDR_TOOL_STRESSAPPTEST_STRESSAPPTEST_H */

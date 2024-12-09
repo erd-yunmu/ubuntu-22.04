@@ -909,6 +909,11 @@ static int setup_initial_state(struct drm_device *drm_dev,
 			primary_state->crtc_y = (vdisplay - fb_height) / 2;
 			primary_state->crtc_h = fb_height;
 		}
+
+		if (set->fb->width > hdisplay) {
+			primary_state->crtc_h = (set->fb->height * hdisplay) / set->fb->width;
+			primary_state->crtc_y = (vdisplay - primary_state->crtc_h) / 2;
+		}
 	} else {
 		primary_state->crtc_x = 0;
 		primary_state->crtc_y = 0;
@@ -1247,8 +1252,14 @@ static const char *const loader_protect_clocks[] __initconst = {
 	"dclk_vop",
 	"dclk_vop0",
 	"dclk_vop1",
+	"dclk_vop2",
+	"dclk_vop3",
 	"dclk_vopb",
 	"dclk_vopl",
+	"dclk_vp0",
+	"dclk_vp1",
+	"dclk_vp2",
+	"dclk_vp3",
 };
 
 static struct clk **loader_clocks __initdata;

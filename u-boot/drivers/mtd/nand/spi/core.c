@@ -255,6 +255,14 @@ static int spinand_read_from_cache_op(struct spinand_device *spinand,
 		nbytes = adjreq.datalen;
 	}
 
+	if (spinand->support_cont_read && req->datalen) {
+		adjreq.datalen = req->datalen;
+		adjreq.dataoffs = 0;
+		adjreq.databuf.in = req->databuf.in;
+		buf = req->databuf.in;
+		nbytes = adjreq.datalen;
+	}
+
 	if (req->ooblen) {
 		adjreq.ooblen = nanddev_per_page_oobsize(nand);
 		adjreq.ooboffs = 0;
@@ -281,6 +289,8 @@ static int spinand_read_from_cache_op(struct spinand_device *spinand,
 		if (ret)
 			return ret;
 
+		if (spinand->support_cont_read)
+			op.addr.nbytes = 3;
 		ret = spi_mem_exec_op(spinand->slave, &op);
 		if (ret)
 			return ret;
@@ -290,9 +300,8 @@ static int spinand_read_from_cache_op(struct spinand_device *spinand,
 		op.addr.val += op.data.nbytes;
 	}
 
-	if (req->datalen)
-		memcpy(req->databuf.in, spinand->databuf + req->dataoffs,
-		       req->datalen);
+	if (!spinand->support_cont_read && req->datalen)
+		memcpy(req->databuf.in, spinand->databuf + req->dataoffs, req->datalen);
 
 	if (req->ooblen) {
 		if (req->mode == MTD_OPS_AUTO_OOB)
@@ -320,6 +329,13 @@ static int spinand_write_to_cache_op(struct spinand_device *spinand,
 	u16 column = 0;
 	int ret;
 
+	/*
+	 * Looks like PROGRAM LOAD (AKA write cache) does not necessarily reset
+	 * the cache content to 0xFF (depends on vendor implementation), so we
+	 * must fill the page cache entirely even if we only want to program
+	 * the data portion of the page, otherwise we might corrupt the BBM or
+	 * user data previously programmed in OOB area.
+	 */
 	memset(spinand->databuf, 0xff,
 	       nanddev_page_size(nand) +
 	       nanddev_per_page_oobsize(nand));
@@ -460,6 +476,7 @@ static int spinand_read_id_op(struct spinand_device *spinand, u8 naddr,
 	return ret;
 }
 
+#if !CONFIG_IS_ENABLED(SUPPORT_USBPLUG)
 static int spinand_reset_op(struct spinand_device *spinand)
 {
 	struct spi_mem_op op = SPINAND_RESET_OP;
@@ -471,6 +488,7 @@ static int spinand_reset_op(struct spinand_device *spinand)
 
 	return spinand_wait(spinand, NULL);
 }
+#endif
 
 static int spinand_lock_block(struct spinand_device *spinand, u8 lock)
 {
@@ -510,7 +528,7 @@ static int spinand_read_page(struct spinand_device *spinand,
 			     const struct nand_page_io_req *req,
 			     bool ecc_enabled)
 {
-	u8 status;
+	u8 status = 0;
 	int ret;
 
 	ret = spinand_load_page_op(spinand, req);
@@ -518,12 +536,21 @@ static int spinand_read_page(struct spinand_device *spinand,
 		return ret;
 
 	ret = spinand_wait(spinand, &status);
+	/*
+	 * When there is data outside of OIP in the status, the status data is
+	 * inaccurate and needs to be reconfirmed
+	 */
+	if (spinand->id.data[0] == 0x01 && status && !ret)
+		ret = spinand_wait(spinand, &status);
 	if (ret < 0)
 		return ret;
 
 	ret = spinand_read_from_cache_op(spinand, req);
 	if (ret)
 		return ret;
+
+	if (spinand->support_cont_read && !(spinand->slave->mode & SPI_DMA_PREPARE))
+		spinand_wait(spinand, &status);
 
 	if (!ecc_enabled)
 		return 0;
@@ -583,6 +610,10 @@ static int spinand_mtd_read(struct mtd_info *mtd, loff_t from,
 		if (ret)
 			break;
 
+		if (spinand->support_cont_read) {
+			iter.req.datalen = ops->len;
+			iter.req.ooblen = 0;
+		}
 		ret = spinand_read_page(spinand, &iter.req, enable_ecc);
 		if (ret < 0 && ret != -EBADMSG)
 			break;
@@ -590,10 +621,16 @@ static int spinand_mtd_read(struct mtd_info *mtd, loff_t from,
 		if (ret == -EBADMSG) {
 			ecc_failed = true;
 			mtd->ecc_stats.failed++;
-			ret = 0;
 		} else {
 			mtd->ecc_stats.corrected += ret;
 			max_bitflips = max_t(unsigned int, max_bitflips, ret);
+		}
+
+		ret = 0;
+		if (spinand->support_cont_read) {
+			ops->retlen = ops->len;
+			ops->oobretlen = ops->ooblen;
+			break;
 		}
 
 		ops->retlen += iter.req.datalen;
@@ -703,6 +740,10 @@ static int spinand_markbad(struct nand_device *nand, const struct nand_pos *pos)
 	int ret;
 
 	ret = spinand_select_target(spinand, pos->target);
+	if (ret)
+		return ret;
+
+	ret = spinand_write_enable_op(spinand);
 	if (ret)
 		return ret;
 
@@ -837,6 +878,9 @@ static const struct spinand_manufacturer *spinand_manufacturers[] = {
 #ifdef CONFIG_SPI_NAND_ESMT
 	&esmt_spinand_manufacturer,
 #endif
+#ifdef CONFIG_SPI_NAND_XINCUN
+	&xincun_spinand_manufacturer,
+#endif
 #ifdef CONFIG_SPI_NAND_XTX
 	&xtx_spinand_manufacturer,
 #endif
@@ -863,9 +907,16 @@ static const struct spinand_manufacturer *spinand_manufacturers[] = {
 #endif
 #ifdef CONFIG_SPI_NAND_UNIM
 	&unim_spinand_manufacturer,
+	&unim_zl_spinand_manufacturer,
 #endif
 #ifdef CONFIG_SPI_NAND_SKYHIGH
 	&skyhigh_spinand_manufacturer,
+#endif
+#ifdef CONFIG_SPI_NAND_GSTO
+	&gsto_spinand_manufacturer,
+#endif
+#ifdef CONFIG_SPI_NAND_ZBIT
+	&zbit_spinand_manufacturer,
 #endif
 };
 
@@ -1044,9 +1095,11 @@ static int spinand_detect(struct spinand_device *spinand)
 	struct nand_device *nand = spinand_to_nand(spinand);
 	int ret;
 
+#if !CONFIG_IS_ENABLED(SUPPORT_USBPLUG)
 	ret = spinand_reset_op(spinand);
 	if (ret)
 		return ret;
+#endif
 
 	ret = spinand_id_detect(spinand);
 	if (ret) {
@@ -1054,6 +1107,8 @@ static int spinand_detect(struct spinand_device *spinand)
 			spinand->id.data[0], spinand->id.data[1], spinand->id.data[2]);
 		return ret;
 	}
+	dev_err(dev, "SPI Nand ID %x %x %x\n",
+		spinand->id.data[0], spinand->id.data[1], spinand->id.data[2]);
 
 	if (nand->memorg.ntargets > 1 && !spinand->select_target) {
 		dev_err(dev,
@@ -1153,6 +1208,13 @@ static int spinand_init(struct spinand_device *spinand)
 		ret = spinand_select_target(spinand, i);
 		if (ret)
 			goto err_free_bufs;
+
+		/* HWP_EN must be enabled first before block unlock region is set */
+		if (spinand->id.data[0] == 0x01) {
+			ret = spinand_lock_block(spinand, HWP_EN);
+			if (ret)
+				goto err_free_bufs;
+		}
 
 		ret = spinand_lock_block(spinand, BL_ALL_UNLOCKED);
 		if (ret)

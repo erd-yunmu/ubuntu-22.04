@@ -778,19 +778,6 @@ config VIDEO_IMX586
 	  To compile this driver as a module, choose M here: the
 	  module will be called imx586.
 
-config VIDEO_IMX708
-	tristate "Sony IMX708 sensor support"
-	depends on I2C && VIDEO_DEV
-	select MEDIA_CONTROLLER
-	select VIDEO_V4L2_SUBDEV_API
-	select V4L2_FWNODE
-	help
-	  This is a Video4Linux2 sensor driver for the Sony
-	  IMX708 camera.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called imx708.
-
 config VIDEO_JX_F37
 	tristate "Soi JX_F37 sensor support"
 	depends on I2C && VIDEO_DEV
@@ -2206,6 +2193,17 @@ config VIDEO_FP5510
 	help
 	  This is a driver for the FP5510 camera lens voice coil.
 	  FP5510 is a 10 bit DAC with 100mA output current sink
+	  capability. This is designed for linear control of
+	  voice coil motors, controlled via I2C serial interface.
+
+config VIDEO_VM149C
+	tristate "VM149C lens voice coil support"
+	depends on I2C && VIDEO_DEV
+	select MEDIA_CONTROLLER
+	select VIDEO_V4L2_SUBDEV_API
+	help
+	  This is a driver for the VM149C camera lens voice coil.
+	  VM149C is a 10 bit DAC with 100mA output current sink
 	  capability. This is designed for linear control of
 	  voice coil motors, controlled via I2C serial interface.
 

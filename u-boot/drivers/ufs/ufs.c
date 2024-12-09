@@ -21,7 +21,15 @@
 #include <linux/bitops.h>
 #include <linux/delay.h>
 
+#if defined(CONFIG_SUPPORT_USBPLUG)
+#include "ufs-rockchip-usbplug.h"
+#endif
+
 #include "ufs.h"
+
+#if defined(CONFIG_ROCKCHIP_UFS_RPMB)
+#include "ufs-rockchip-rpmb.h"
+#endif
 
 #define UFSHCD_ENABLE_INTRS	(UTP_TRANSFER_REQ_COMPL |\
 				 UTP_TASK_REQ_COMPL |\
@@ -39,10 +47,15 @@
 
 /* maximum timeout in ms for a general UIC command */
 #define UFS_UIC_CMD_TIMEOUT	1000
+
+#define UFS_UIC_LINKUP_TIMEOUT	150
 /* NOP OUT retries waiting for NOP IN response */
+/* Polling time to wait for fDeviceInit */
+#define FDEVICEINIT_COMPL_TIMEOUT 1500 /* millisecs */
+
 #define NOP_OUT_RETRIES    10
 /* Timeout after 30 msecs if NOP OUT hangs without response */
-#define NOP_OUT_TIMEOUT    30 /* msecs */
+#define NOP_OUT_TIMEOUT    1500 /* msecs */
 
 /* Only use one Task Tag for all requests */
 #define TASK_TAG	0
@@ -169,12 +182,16 @@ static int ufshcd_send_uic_cmd(struct ufs_hba *hba, struct uic_command *uic_cmd)
 	unsigned long start = 0;
 	u32 intr_status;
 	u32 enabled_intr_status;
+	int timeout = UFS_UIC_CMD_TIMEOUT;
 
 	if (!ufshcd_ready_for_uic_cmd(hba)) {
 		dev_err(hba->dev,
 			"Controller not ready to accept UIC commands\n");
 		return -EIO;
 	}
+
+	if (uic_cmd->command == UIC_CMD_DME_LINK_STARTUP)
+		timeout = UFS_UIC_LINKUP_TIMEOUT;
 
 	debug("sending uic command:%d\n", uic_cmd->command);
 
@@ -193,7 +210,7 @@ static int ufshcd_send_uic_cmd(struct ufs_hba *hba, struct uic_command *uic_cmd)
 		enabled_intr_status = intr_status & hba->intr_mask;
 		ufshcd_writel(hba, intr_status, REG_INTERRUPT_STATUS);
 
-		if (get_timer(start) > UFS_UIC_CMD_TIMEOUT) {
+		if (get_timer(start) > timeout) {
 			dev_err(hba->dev,
 				"Timedout waiting for UIC response\n");
 
@@ -315,7 +332,7 @@ static int ufshcd_disable_tx_lcc(struct ufs_hba *hba, bool peer)
 					UIC_ARG_MPHY_TX_GEN_SEL_INDEX(i)),
 					0);
 		if (err) {
-			dev_err(hba->dev, "%s: TX LCC Disable failed, peer = %d, lane = %d, err = %d",
+			dev_err(hba->dev, "%s: TX LCC Disable failed, peer = %d, lane = %d, err = %d\n",
 				__func__, peer, i, err);
 			break;
 		}
@@ -344,6 +361,34 @@ static int ufshcd_dme_link_startup(struct ufs_hba *hba)
 	if (ret)
 		dev_dbg(hba->dev,
 			"dme-link-startup: error code %d\n", ret);
+	return ret;
+}
+
+int ufshcd_dme_enable(struct ufs_hba *hba)
+{
+	struct uic_command uic_cmd = {0};
+	int ret;
+
+	uic_cmd.command = UIC_CMD_DME_ENABLE;
+
+	ret = ufshcd_send_uic_cmd(hba, &uic_cmd);
+	if (ret)
+		dev_err(hba->dev,
+			"dme-enable: error code %d\n", ret);
+	return ret;
+}
+
+int ufshcd_dme_reset(struct ufs_hba *hba)
+{
+	struct uic_command uic_cmd = {0};
+	int ret;
+
+	uic_cmd.command = UIC_CMD_DME_RESET;
+
+	ret = ufshcd_send_uic_cmd(hba, &uic_cmd);
+	if (ret)
+		dev_err(hba->dev,
+			"dme-reset: error code %d\n", ret);
 	return ret;
 }
 
@@ -436,7 +481,7 @@ static int ufshcd_make_hba_operational(struct ufs_hba *hba)
 		ufshcd_enable_run_stop_reg(hba);
 	} else {
 		dev_err(hba->dev,
-			"Host controller not ready to process requests");
+			"Host controller not ready to process requests\n");
 		err = -EIO;
 		goto out;
 	}
@@ -453,6 +498,9 @@ static int ufshcd_link_startup(struct ufs_hba *hba)
 	int ret;
 	int retries = DME_LINKSTARTUP_RETRIES;
 	bool link_startup_again = true;
+
+	if (ufshcd_is_device_present(hba))
+		goto  device_present;
 
 link_startup:
 	do {
@@ -486,6 +534,7 @@ link_startup:
 		goto link_startup;
 	}
 
+device_present:
 	/* Mark that link is up in PWM-G1, 1-lane, SLOW-AUTO mode */
 	ufshcd_init_pwr_info(hba);
 
@@ -583,7 +632,8 @@ static int ufshcd_hba_enable(struct ufs_hba *hba)
 	/* enable UIC related interrupts */
 	ufshcd_enable_intr(hba, UFSHCD_UIC_MASK);
 
-	ufshcd_ops_hce_enable_notify(hba, POST_CHANGE);
+	if (ufshcd_ops_hce_enable_notify(hba, POST_CHANGE))
+		return -EIO;
 
 	return 0;
 }
@@ -644,6 +694,21 @@ static int ufshcd_memory_alloc(struct ufs_hba *hba)
 		return -ENOMEM;
 	}
 
+	hba->dev_desc = memalign(ARCH_DMA_MINALIGN, sizeof(struct ufs_device_descriptor));
+	if (!hba->dev_desc) {
+		dev_err(hba->dev, "memory allocation failed\n");
+		return -ENOMEM;
+	}
+
+#if defined(CONFIG_SUPPORT_USBPLUG)
+	hba->rc_desc = memalign(ARCH_DMA_MINALIGN, sizeof(struct ufs_configuration_descriptor));
+	hba->wc_desc = memalign(ARCH_DMA_MINALIGN, sizeof(struct ufs_configuration_descriptor));
+	hba->geo_desc = memalign(ARCH_DMA_MINALIGN, sizeof(struct ufs_geometry_descriptor));
+	if (!hba->rc_desc || !hba->wc_desc || !hba->geo_desc) {
+		dev_err(hba->dev, "memory allocation failed\n");
+		return -ENOMEM;
+	}
+#endif
 	return 0;
 }
 
@@ -688,6 +753,21 @@ static inline u8 ufshcd_get_upmcrs(struct ufs_hba *hba)
 }
 
 /**
+ * ufshcd_cache_flush_and_invalidate - Flush and invalidate cache
+ *
+ * Flush and invalidate cache in aligned address..address+size range.
+ * The invalidation is in place to avoid stale data in cache.
+ */
+static void ufshcd_cache_flush_and_invalidate(void *addr, unsigned long size)
+{
+	uintptr_t aaddr = (uintptr_t)addr & ~(ARCH_DMA_MINALIGN - 1);
+	unsigned long asize = ALIGN(size, ARCH_DMA_MINALIGN);
+
+	flush_dcache_range(aaddr, aaddr + asize);
+	invalidate_dcache_range(aaddr, aaddr + asize);
+}
+
+/**
  * ufshcd_prepare_req_desc_hdr() - Fills the requests header
  * descriptor according to request
  */
@@ -729,6 +809,8 @@ static void ufshcd_prepare_req_desc_hdr(struct utp_transfer_req_desc *req_desc,
 	req_desc->header.dword_3 = 0;
 
 	req_desc->prd_table_length = 0;
+
+	ufshcd_cache_flush_and_invalidate(req_desc, sizeof(*req_desc));
 }
 
 static void ufshcd_prepare_utp_query_req_upiu(struct ufs_hba *hba,
@@ -757,10 +839,16 @@ static void ufshcd_prepare_utp_query_req_upiu(struct ufs_hba *hba,
 	memcpy(&ucd_req_ptr->qr, &query->request.upiu_req, QUERY_OSF_SIZE);
 
 	/* Copy the Descriptor */
-	if (query->request.upiu_req.opcode == UPIU_QUERY_OPCODE_WRITE_DESC)
-		memcpy(ucd_req_ptr + 1, query->descriptor, len);
+	if (query->request.upiu_req.opcode == UPIU_QUERY_OPCODE_WRITE_DESC) {
+ 		memcpy(ucd_req_ptr + 1, query->descriptor, len);
+		ufshcd_cache_flush_and_invalidate(ucd_req_ptr,
+				ALIGN(sizeof(*ucd_req_ptr) + len, ARCH_DMA_MINALIGN));
+	} else {
+		ufshcd_cache_flush_and_invalidate(ucd_req_ptr, sizeof(*ucd_req_ptr));
+	}
 
 	memset(hba->ucd_rsp_ptr, 0, sizeof(struct utp_upiu_rsp));
+	ufshcd_cache_flush_and_invalidate(hba->ucd_rsp_ptr, sizeof(*hba->ucd_rsp_ptr));
 }
 
 static inline void ufshcd_prepare_utp_nop_upiu(struct ufs_hba *hba)
@@ -771,12 +859,15 @@ static inline void ufshcd_prepare_utp_nop_upiu(struct ufs_hba *hba)
 
 	/* command descriptor fields */
 	ucd_req_ptr->header.dword_0 =
-			UPIU_HEADER_DWORD(UPIU_TRANSACTION_NOP_OUT, 0, 0, 0x1f);
+			UPIU_HEADER_DWORD(UPIU_TRANSACTION_NOP_OUT, 0, 0, TASK_TAG);
 	/* clear rest of the fields of basic header */
 	ucd_req_ptr->header.dword_1 = 0;
 	ucd_req_ptr->header.dword_2 = 0;
 
 	memset(hba->ucd_rsp_ptr, 0, sizeof(struct utp_upiu_rsp));
+
+	ufshcd_cache_flush_and_invalidate(ucd_req_ptr, sizeof(*ucd_req_ptr));
+	ufshcd_cache_flush_and_invalidate(hba->ucd_rsp_ptr, sizeof(*hba->ucd_rsp_ptr));
 }
 
 /**
@@ -895,6 +986,9 @@ static int ufshcd_copy_query_response(struct ufs_hba *hba)
 		buf_len =
 			be16_to_cpu(hba->dev_cmd.query.request.upiu_req.length);
 		if (likely(buf_len >= resp_len)) {
+			int size = ALIGN(GENERAL_UPIU_REQUEST_SIZE + resp_len, ARCH_DMA_MINALIGN);
+
+			invalidate_dcache_range((uintptr_t)hba->ucd_rsp_ptr, (uintptr_t)hba->ucd_rsp_ptr + size);
 			memcpy(hba->dev_cmd.query.descriptor, descp, resp_len);
 		} else {
 			dev_warn(hba->dev,
@@ -910,8 +1004,7 @@ static int ufshcd_copy_query_response(struct ufs_hba *hba)
 /**
  * ufshcd_exec_dev_cmd - API for sending device management requests
  */
-static int ufshcd_exec_dev_cmd(struct ufs_hba *hba, enum dev_cmd_type cmd_type,
-			       int timeout)
+int ufshcd_exec_dev_cmd(struct ufs_hba *hba, enum dev_cmd_type cmd_type, int timeout)
 {
 	int err;
 	int resp;
@@ -1075,8 +1168,7 @@ static int __ufshcd_query_descriptor(struct ufs_hba *hba,
 		goto out;
 	}
 
-	ufshcd_init_query(hba, &request, &response, opcode, idn, index,
-			  selector);
+	ufshcd_init_query(hba, &request, &response, opcode, idn, index, selector);
 	hba->dev_cmd.query.descriptor = desc_buf;
 	request->upiu_req.length = cpu_to_be16(*buf_len);
 
@@ -1132,7 +1224,7 @@ int ufshcd_query_descriptor_retry(struct ufs_hba *hba, enum query_opcode opcode,
 /**
  * ufshcd_read_desc_length - read the specified descriptor length from header
  */
-static int ufshcd_read_desc_length(struct ufs_hba *hba, enum desc_idn desc_id,
+int ufshcd_read_desc_length(struct ufs_hba *hba, enum desc_idn desc_id,
 				   int desc_index, int *desc_length)
 {
 	int ret;
@@ -1147,11 +1239,11 @@ static int ufshcd_read_desc_length(struct ufs_hba *hba, enum desc_idn desc_id,
 					    &header_len);
 
 	if (ret) {
-		dev_err(hba->dev, "%s: Failed to get descriptor header id %d",
+		dev_err(hba->dev, "%s: Failed to get descriptor header id %d\n",
 			__func__, desc_id);
 		return ret;
 	} else if (desc_id != header[QUERY_DESC_DESC_TYPE_OFFSET]) {
-		dev_warn(hba->dev, "%s: descriptor header id %d and desc_id %d mismatch",
+		dev_warn(hba->dev, "%s: descriptor header id %d and desc_id %d mismatch\n",
 			 __func__, header[QUERY_DESC_DESC_TYPE_OFFSET],
 			 desc_id);
 		ret = -EINVAL;
@@ -1270,7 +1362,7 @@ int ufshcd_read_desc_param(struct ufs_hba *hba, enum desc_idn desc_id,
 
 	/* Sanity checks */
 	if (ret || !buff_len) {
-		dev_err(hba->dev, "%s: Failed to get full descriptor length",
+		dev_err(hba->dev, "%s: Failed to get full descriptor length\n",
 			__func__);
 		return ret;
 	}
@@ -1291,14 +1383,14 @@ int ufshcd_read_desc_param(struct ufs_hba *hba, enum desc_idn desc_id,
 					    &buff_len);
 
 	if (ret) {
-		dev_err(hba->dev, "%s: Failed reading descriptor. desc_id %d, desc_index %d, param_offset %d, ret %d",
+		dev_err(hba->dev, "%s: Failed reading descriptor. desc_id %d, desc_index %d, param_offset %d, ret %d\n",
 			__func__, desc_id, desc_index, param_offset, ret);
 		goto out;
 	}
 
 	/* Sanity check */
 	if (desc_buf[QUERY_DESC_DESC_TYPE_OFFSET] != desc_id) {
-		dev_err(hba->dev, "%s: invalid desc_id %d in descriptor header",
+		dev_err(hba->dev, "%s: invalid desc_id %d in descriptor header\n",
 			__func__, desc_buf[QUERY_DESC_DESC_TYPE_OFFSET]);
 		ret = -EINVAL;
 		goto out;
@@ -1402,6 +1494,8 @@ void ufshcd_prepare_utp_scsi_cmd_upiu(struct ufs_hba *hba,
 	memcpy(ucd_req_ptr->sc.cdb, pccb->cmd, cdb_len);
 
 	memset(hba->ucd_rsp_ptr, 0, sizeof(struct utp_upiu_rsp));
+	ufshcd_cache_flush_and_invalidate(ucd_req_ptr, sizeof(*ucd_req_ptr));
+	ufshcd_cache_flush_and_invalidate(hba->ucd_rsp_ptr, sizeof(*hba->ucd_rsp_ptr));
 }
 
 static inline void prepare_prdt_desc(struct ufshcd_sg_entry *entry,
@@ -1416,6 +1510,7 @@ static void prepare_prdt_table(struct ufs_hba *hba, struct scsi_cmd *pccb)
 {
 	struct utp_transfer_req_desc *req_desc = hba->utrdl;
 	struct ufshcd_sg_entry *prd_table = hba->ucd_prdt_ptr;
+	uintptr_t aaddr = (uintptr_t)(pccb->pdata) & ~(ARCH_DMA_MINALIGN - 1);
 	ulong datalen = pccb->datalen;
 	int table_length;
 	u8 *buf;
@@ -1423,8 +1518,16 @@ static void prepare_prdt_table(struct ufs_hba *hba, struct scsi_cmd *pccb)
 
 	if (!datalen) {
 		req_desc->prd_table_length = 0;
+		ufshcd_cache_flush_and_invalidate(req_desc, sizeof(*req_desc));
 		return;
 	}
+
+	if (pccb->dma_dir == DMA_TO_DEVICE) {	/* Write to device */
+		flush_dcache_range(aaddr, ALIGN(aaddr + datalen + ARCH_DMA_MINALIGN - 1, ARCH_DMA_MINALIGN));
+	}
+
+	/* In any case, invalidate cache to avoid stale data in it. */
+	invalidate_dcache_range(aaddr, ALIGN(aaddr + datalen + ARCH_DMA_MINALIGN - 1, ARCH_DMA_MINALIGN));
 
 	table_length = DIV_ROUND_UP(pccb->datalen, MAX_PRDT_ENTRY);
 	buf = pccb->pdata;
@@ -1439,21 +1542,29 @@ static void prepare_prdt_table(struct ufs_hba *hba, struct scsi_cmd *pccb)
 	prepare_prdt_desc(&prd_table[table_length - i - 1], buf, datalen - 1);
 
 	req_desc->prd_table_length = table_length;
+	ufshcd_cache_flush_and_invalidate(prd_table, sizeof(*prd_table) * table_length);
+	ufshcd_cache_flush_and_invalidate(req_desc, sizeof(*req_desc));
 }
 
-static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
+int ufs_send_scsi_cmd(struct ufs_hba *hba, struct scsi_cmd *pccb)
 {
-	struct ufs_hba *hba = dev_get_uclass_priv(scsi_dev->parent);
 	struct utp_transfer_req_desc *req_desc = hba->utrdl;
 	u32 upiu_flags;
-	int ocs, result = 0;
+	int ocs, result = 0, retry_count = 3;
 	u8 scsi_status;
 
+	if (hba->quirks & UFSDEV_QUIRK_LUN_IN_SCSI_COMMANDS)
+		pccb->cmd[1] &= 0x1F;
+
+retry:
 	ufshcd_prepare_req_desc_hdr(req_desc, &upiu_flags, pccb->dma_dir);
 	ufshcd_prepare_utp_scsi_cmd_upiu(hba, pccb, upiu_flags);
 	prepare_prdt_table(hba, pccb);
 
-	ufshcd_send_command(hba, TASK_TAG);
+	if (ufshcd_send_command(hba, TASK_TAG) == -ETIMEDOUT && retry_count) {
+		retry_count--;
+		goto retry;
+	}
 
 	ocs = ufshcd_get_tr_ocs(hba);
 	switch (ocs) {
@@ -1464,6 +1575,14 @@ static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
 			result = ufshcd_get_rsp_upiu_result(hba->ucd_rsp_ptr);
 
 			scsi_status = result & MASK_SCSI_STATUS;
+			if (pccb->cmd[0] == SCSI_TST_U_RDY && scsi_status) {
+				/* Test ready cmd will fail with Phison UFS, break to continue */
+				if (retry_count) {
+					retry_count--;
+					goto retry;
+				}
+				break;
+			}
 			if (scsi_status)
 				return -EINVAL;
 
@@ -1486,6 +1605,13 @@ static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
 	}
 
 	return 0;
+}
+
+static int ufs_scsi_exec(struct udevice *scsi_dev, struct scsi_cmd *pccb)
+{
+	struct ufs_hba *hba = dev_get_uclass_priv(scsi_dev->parent);
+
+	return ufs_send_scsi_cmd(hba, pccb);
 }
 
 static inline int ufshcd_read_desc(struct ufs_hba *hba, enum desc_idn desc_id,
@@ -1533,7 +1659,7 @@ int ufshcd_read_string_desc(struct ufs_hba *hba, int desc_index,
 			goto out;
 		}
 
-		buff_ascii = kmalloc(ascii_len, GFP_KERNEL);
+		buff_ascii = kmalloc(ALIGN(ascii_len, ARCH_DMA_MINALIGN), GFP_KERNEL);
 		if (!buff_ascii) {
 			err = -ENOMEM;
 			goto out;
@@ -1560,59 +1686,20 @@ out:
 	return err;
 }
 
-static int ufs_get_device_desc(struct ufs_hba *hba,
-			       struct ufs_dev_desc *dev_desc)
+static int ufs_get_device_desc(struct ufs_hba *hba, struct ufs_device_descriptor *dev_desc)
 {
 	int err;
 	size_t buff_len;
-	u8 model_index;
-	u8 *desc_buf;
 
-	buff_len = max_t(size_t, hba->desc_size.dev_desc,
-			 QUERY_DESC_MAX_SIZE + 1);
-	desc_buf = kmalloc(buff_len, GFP_KERNEL);
-	if (!desc_buf) {
-		err = -ENOMEM;
-		goto out;
-	}
+	buff_len = sizeof(*dev_desc);
+	if (buff_len > hba->desc_size.dev_desc)
+		buff_len = hba->desc_size.dev_desc;
 
-	err = ufshcd_read_device_desc(hba, desc_buf, hba->desc_size.dev_desc);
-	if (err) {
+	err = ufshcd_read_device_desc(hba, (u8 *)dev_desc, buff_len);
+	if (err)
 		dev_err(hba->dev, "%s: Failed reading Device Desc. err = %d\n",
 			__func__, err);
-		goto out;
-	}
 
-	/*
-	 * getting vendor (manufacturerID) and Bank Index in big endian
-	 * format
-	 */
-	dev_desc->wmanufacturerid = desc_buf[DEVICE_DESC_PARAM_MANF_ID] << 8 |
-				     desc_buf[DEVICE_DESC_PARAM_MANF_ID + 1];
-
-	model_index = desc_buf[DEVICE_DESC_PARAM_PRDCT_NAME];
-
-	/* Zero-pad entire buffer for string termination. */
-	memset(desc_buf, 0, buff_len);
-
-	err = ufshcd_read_string_desc(hba, model_index, desc_buf,
-				      QUERY_DESC_MAX_SIZE, true/*ASCII*/);
-	if (err) {
-		dev_err(hba->dev, "%s: Failed reading Product Name. err = %d\n",
-			__func__, err);
-		goto out;
-	}
-
-	desc_buf[QUERY_DESC_MAX_SIZE] = '\0';
-	strlcpy(dev_desc->model, (char *)(desc_buf + QUERY_DESC_HDR_SIZE),
-		min_t(u8, desc_buf[QUERY_DESC_LENGTH_OFFSET],
-		      MAX_MODEL_LEN));
-
-	/* Null terminate the model string */
-	dev_desc->model[MAX_MODEL_LEN] = '\0';
-
-out:
-	kfree(desc_buf);
 	return err;
 }
 
@@ -1767,6 +1854,7 @@ static int ufshcd_verify_dev_init(struct ufs_hba *hba)
  */
 static int ufshcd_complete_dev_init(struct ufs_hba *hba)
 {
+	unsigned long start = 0;
 	int i;
 	int err;
 	bool flag_res = 1;
@@ -1780,11 +1868,16 @@ static int ufshcd_complete_dev_init(struct ufs_hba *hba)
 		goto out;
 	}
 
-	/* poll for max. 1000 iterations for fDeviceInit flag to clear */
-	for (i = 0; i < 1000 && !err && flag_res; i++)
+	/* poll for max. 1500ms for fDeviceInit flag to clear */
+	start = get_timer(0);
+	for (i = 0; i < 3000 && !err && flag_res; i++) {
 		err = ufshcd_query_flag_retry(hba, UPIU_QUERY_OPCODE_READ_FLAG,
 					      QUERY_FLAG_IDN_FDEVICEINIT,
 					      &flag_res);
+		if (get_timer(start) > FDEVICEINIT_COMPL_TIMEOUT)
+			break;
+		udelay(500);
+	}
 
 	if (err)
 		dev_err(hba->dev,
@@ -1810,18 +1903,22 @@ static void ufshcd_def_desc_sizes(struct ufs_hba *hba)
 	hba->desc_size.hlth_desc = QUERY_DESC_HEALTH_DEF_SIZE;
 }
 
-int ufs_start(struct ufs_hba *hba)
+int _ufs_start(struct ufs_hba *hba)
 {
-	struct ufs_dev_desc card = {0};
-	int ret;
+	int ret, retry_count = 1;
 
+retry:
 	ret = ufshcd_link_startup(hba);
 	if (ret)
 		return ret;
 
 	ret = ufshcd_verify_dev_init(hba);
-	if (ret)
+	if (ret) {
+		ufshcd_hba_enable(hba);
+		if (retry_count--)
+			goto retry;
 		return ret;
+	}
 
 	ret = ufshcd_complete_dev_init(hba);
 	if (ret)
@@ -1830,7 +1927,7 @@ int ufs_start(struct ufs_hba *hba)
 	/* Init check for device descriptor sizes */
 	ufshcd_init_desc_sizes(hba);
 
-	ret = ufs_get_device_desc(hba, &card);
+	ret = ufs_get_device_desc(hba, hba->dev_desc);
 	if (ret) {
 		dev_err(hba->dev, "%s: Failed getting device info. err = %d\n",
 			__func__, ret);
@@ -1838,6 +1935,32 @@ int ufs_start(struct ufs_hba *hba)
 		return ret;
 	}
 
+	if (hba->dev_desc->w_spec_version == 0x1002)
+		hba->quirks |= UFSDEV_QUIRK_LUN_IN_SCSI_COMMANDS;
+
+	if (hba->dev_desc->w_spec_version == 0x2002)
+		if (hba->dev_desc->w_manufacturer_id == 0x250A ||
+		    hba->dev_desc->w_manufacturer_id == 0x9802)
+			hba->quirks |= UFSDEV_QUIRK_LUN_IN_SCSI_COMMANDS;
+
+	return ret;
+}
+
+int ufs_start(struct ufs_hba *hba)
+{
+	int ret;
+
+	ret = _ufs_start(hba);
+	if (ret)
+		return ret;
+
+#if defined(CONFIG_SUPPORT_USBPLUG) 
+	ret = ufs_create_partition_inventory(hba);
+	if (ret) {
+		dev_err(hba->dev, "%s: Failed to creat partition. err = %d\n", __func__, ret);
+		return ret;
+	}
+#endif
 	if (ufshcd_get_max_pwr_mode(hba)) {
 		dev_err(hba->dev,
 			"%s: Failed getting max supported power mode\n",
@@ -1854,6 +1977,10 @@ int ufs_start(struct ufs_hba *hba)
 		printf("Device at %s up at:", hba->dev->name);
 		ufshcd_print_pwr_info(hba);
 	}
+
+#if defined(CONFIG_ROCKCHIP_UFS_RPMB) 
+	ufs_rpmb_init(hba);
+#endif
 
 	return 0;
 }

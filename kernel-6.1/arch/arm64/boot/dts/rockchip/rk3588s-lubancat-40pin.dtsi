@@ -22,7 +22,6 @@
 	pinctrl-0 = <&i2c6m3_xfer>;
 };
 
-
 &spi0 {
 	status = "okay";
 	pinctrl-names = "default";
@@ -79,4 +78,3 @@
 	pinctrl-0 = <&pwm15m3_pins>;
 	status = "okay";
 };
-

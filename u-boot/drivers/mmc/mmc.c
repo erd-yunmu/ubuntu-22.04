@@ -902,9 +902,13 @@ int mmc_send_tuning(struct mmc *mmc, u32 opcode)
 	data.flags = MMC_DATA_READ;
 
 	err = mmc_send_cmd(mmc, &cmd, &data);
-	if (err)
+	if (err) {
+		cmd.cmdidx = MMC_CMD_STOP_TRANSMISSION;
+		cmd.cmdarg = 0;
+		cmd.resp_type = MMC_RSP_R1b;
+		mmc_send_cmd(mmc, &cmd, NULL);
 		goto out;
-
+	}
 	if (memcmp(data_buf, tuning_block_pattern, size))
 		err = -EIO;
 out:
@@ -1885,6 +1889,10 @@ static int mmc_startup(struct mmc *mmc)
 	mmc->erase_grp_size = 1;
 	mmc->part_config = MMCPART_NOAVAILABLE;
 	if (!IS_SD(mmc) && (mmc->version >= MMC_VERSION_4)) {
+		/* select high speed to reduce initialization time */
+		mmc_select_hs(mmc);
+		mmc_set_clock(mmc, MMC_HIGH_52_MAX_DTR);
+
 		/* check  ext_csd version and capacity */
 		err = mmc_send_ext_csd(mmc, ext_csd);
 		if (err)

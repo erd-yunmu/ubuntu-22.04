@@ -16,7 +16,7 @@
 
 		__overlay__ {
 			status = "okay";
-			connect = <&vp2_out_dp0>;	
+			connect = <&vp2_out_dp0>;
 		};
 	};
 
@@ -43,6 +43,4 @@
 			status = "okay";
 		};
 	};
-
 };
-

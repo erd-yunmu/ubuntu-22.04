@@ -192,7 +192,12 @@ mkimage -A arm64 -O linux -T script -C none -n "Boot Script" -d ${mount_point}/s
 
 # Uboot env
 cat > ${mount_point}/system-boot/ubuntuEnv.txt << EOF
+# By default, tty kernel and system log messages are disabled
 bootargs=root=UUID=${root_uuid} rootfstype=ext4 rootwait rw console=ttyS2,1500000 console=tty1 console=ttyFIQ0 cgroup_enable=cpuset cgroup_memory=1 cgroup_enable=memory swapaccount=1 systemd.unified_cgroup_hierarchy=0 ${bootargs}
+
+# Enable tty kernel and system log messages
+# bootargs=uart8250,mmio32,0xfeb50000 console=ttyFIQ0 irqchip.gicv3_pseudo_nmi=0 root=UUID=${root_uuid} rootfstype=ext4 rw rootwait rcupdate.rcu_expedited=1 rcu_nocbs=all ${bootargs}
+
 fdtfile=${DEVICE_TREE_FILE}
 overlay_prefix=${OVERLAY_PREFIX}
 EOF

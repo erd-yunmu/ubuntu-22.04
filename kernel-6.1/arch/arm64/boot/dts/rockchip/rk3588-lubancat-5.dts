@@ -10,11 +10,12 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/pwm/pwm.h>
 #include <dt-bindings/pinctrl/rockchip.h>
-#include <dt-bindings/input/rk-input.h>
+//#include <dt-bindings/input/rk-input.h>
+#include <dt-bindings/input/linux-event-codes.h>
 #include <dt-bindings/display/drm_mipi_dsi.h>
 #include <dt-bindings/display/rockchip_vop.h>
-#include <dt-bindings/phy/jlsemi-dt-phy.h>
 #include <dt-bindings/sensor-dev.h>
+#include <dt-bindings/phy/jlsemi-dt-phy.h>
 #include "rk3588.dtsi"
 #include "rk3588-linux.dtsi"
 
@@ -30,20 +31,26 @@
 //vp3
 // #include "rk3588-lubancat-5-dsi1-ebf410125_1080p.dtsi"
 
-// #include "rk3588-lubancat-5-cam1-imx415.dtsi"
-// #include "rk3588-lubancat-5-cam0-imx415.dtsi"
+#include "rk3588-lubancat-5-csi.dtsi"
+// #include "rk3588-lubancat-5-cam-6x.dtsi"
+
+// #include "rk3588-lubancat-5-cam0.dtsi"
+// #include "rk3588-lubancat-5-cam1.dtsi"
 // #include "rk3588-lubancat-5-cam2.dtsi"
 // #include "rk3588-lubancat-5-cam3.dtsi"
 // #include "rk3588-lubancat-5-cam4.dtsi"
 // #include "rk3588-lubancat-5-cam5.dtsi"
 
+// #include "rk3588-lubancat-5-cam0-imx415.dtsi"
+// #include "rk3588-lubancat-5-cam1-imx415.dtsi"
+// #include "rk3588-lubancat-5-cam2-imx415.dtsi"
+// #include "rk3588-lubancat-5-cam3-imx415.dtsi"
+// #include "rk3588-lubancat-5-cam4-imx415.dtsi"
+// #include "rk3588-lubancat-5-cam5-imx415.dtsi"
+
 / {
 	model = "Embedfire LubanCat-5";
 	compatible = "embedfire,rk3588-lubancat-5", "rockchip,rk3588";
-
-	chosen: chosen {
-		bootargs = "earlycon=uart8250,mmio32,0xfeb50000 console=ttyFIQ0 coherent_pool=1m irqchip.gicv3_pseudo_nmi=0";
-	};
 
 	/* If hdmirx node is disabled, delete the reserved-memory node here. */
 	reserved-memory {
@@ -59,16 +66,20 @@
 		};
 	};
 
+	chosen: chosen {
+		bootargs = "earlycon=uart8250,mmio32,0xfeb50000 console=ttyFIQ0 irqchip.gicv3_pseudo_nmi=0 rcupdate.rcu_expedited=1 rcu_nocbs=all";
+	};
+	
 	adc_keys: adc-keys {
 		compatible = "adc-keys";
 		io-channels = <&saradc 1>;
 		io-channel-names = "buttons";
 		keyup-threshold-microvolt = <1800000>;
 		poll-interval = <100>;
-		
-		up {
-			label = "up";
-			linux,code = <KEY_UP>;
+
+		power {
+			label = "power";
+			linux,code = <KEY_POWER>;
 			press-threshold-microvolt = <1750>;
 		};
 	};
@@ -84,6 +95,20 @@
 			gpios = <&gpio0 RK_PD3 GPIO_ACTIVE_LOW>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&sys_led_pin>;
+		};
+
+		abc_led: abc-led {
+			label = "abc_led";
+			linux,default-trigger = "heartbeat";
+			default-state = "on";
+			gpios = <&gpio6 0 GPIO_ACTIVE_HIGH>;
+		};
+
+		def_led: def-led {
+			label = "def_led";
+			linux,default-trigger = "heartbeat";
+			default-state = "on";
+			gpios = <&gpio7 2 GPIO_ACTIVE_HIGH>;
 		};
 	};
 
@@ -135,7 +160,7 @@
 		regulator-max-microvolt = <5000000>;
 		vin-supply = <&vcc5v0_sys>;
 	};
-	
+
 	combophy_avdd1v8: combophy-avdd1v8 {
 		compatible = "regulator-fixed";
 		regulator-name = "combophy_avdd1v8";
@@ -214,7 +239,7 @@
 		regulator-boot-on;
 		regulator-always-on;
 	};
-	
+
 	hdmiin_sound: hdmiin-sound {
 		compatible = "rockchip,hdmi";
 		rockchip,mclk-fs = <128>;
@@ -294,101 +319,9 @@
 		>;
 	};
 
-	backlight_dsi0: backlight-dsi0 {
-		status = "okay";
-		compatible = "pwm-backlight";
-		pwms = <&pwm0 0 25000 0>;
-		brightness-levels = <
-		0  20  20  21  21  22  22  23
-		23  24  24  25  25  26  26  27
-		27  28  28  29  29  30  30  31
-		31  32  32  33  33  34  34  35
-		35  36  36  37  37  38  38  39
-		40  41  42  43  44  45  46  47
-		48  49  50  51  52  53  54  55
-		56  57  58  59  60  61  62  63
-		64  65  66  67  68  69  70  71
-		72  73  74  75  76  77  78  79
-		80  81  82  83  84  85  86  87
-		88  89  90  91  92  93  94  95
-		96  97  98  99 100 101 102 103
-		104 105 106 107 108 109 110 111
-		112 113 114 115 116 117 118 119
-		120 121 122 123 124 125 126 127
-		128 129 130 131 132 133 134 135
-		136 137 138 139 140 141 142 143
-		144 145 146 147 148 149 150 151
-		152 153 154 155 156 157 158 159
-		160 161 162 163 164 165 166 167
-		168 169 170 171 172 173 174 175
-		176 177 178 179 180 181 182 183
-		184 185 186 187 188 189 190 191
-		192 193 194 195 196 197 198 199
-		200 201 202 203 204 205 206 207
-		208 209 210 211 212 213 214 215
-		216 217 218 219 220 221 222 223
-		224 225 226 227 228 229 230 231
-		232 233 234 235 236 237 238 239
-		240 241 242 243 244 245 246 247
-		248 249 250 251 252 253 254 255	
-		>;
-		default-brightness-level = <200>;
-	};
-
-	backlight_dsi1: backlight-dsi1 {
-		status = "okay";
-		compatible = "pwm-backlight";
-		pwms = <&pwm1 0 25000 0>;
-		brightness-levels = <
-		0  20  20  21  21  22  22  23
-		23  24  24  25  25  26  26  27
-		27  28  28  29  29  30  30  31
-		31  32  32  33  33  34  34  35
-		35  36  36  37  37  38  38  39
-		40  41  42  43  44  45  46  47
-		48  49  50  51  52  53  54  55
-		56  57  58  59  60  61  62  63
-		64  65  66  67  68  69  70  71
-		72  73  74  75  76  77  78  79
-		80  81  82  83  84  85  86  87
-		88  89  90  91  92  93  94  95
-		96  97  98  99 100 101 102 103
-		104 105 106 107 108 109 110 111
-		112 113 114 115 116 117 118 119
-		120 121 122 123 124 125 126 127
-		128 129 130 131 132 133 134 135
-		136 137 138 139 140 141 142 143
-		144 145 146 147 148 149 150 151
-		152 153 154 155 156 157 158 159
-		160 161 162 163 164 165 166 167
-		168 169 170 171 172 173 174 175
-		176 177 178 179 180 181 182 183
-		184 185 186 187 188 189 190 191
-		192 193 194 195 196 197 198 199
-		200 201 202 203 204 205 206 207
-		208 209 210 211 212 213 214 215
-		216 217 218 219 220 221 222 223
-		224 225 226 227 228 229 230 231
-		232 233 234 235 236 237 238 239
-		240 241 242 243 244 245 246 247
-		248 249 250 251 252 253 254 255	
-		>;
-		default-brightness-level = <200>;
-	};
-
 	test-power {
 		status = "okay";
 	};
-};
-
-&pwm0 {
-	pinctrl-0 = <&pwm0m0_pins>;
-	status = "okay";
-};
-
-&pwm1 {
-	pinctrl-0 = <&pwm1m0_pins>;
-	status = "okay";
 };
 
 // &pwm11 {
@@ -397,7 +330,7 @@
 // };
 
 &dmc_opp_table {
-    /delete-node/ opp-2750000000;
+	/delete-node/ opp-2750000000;
 };
 
 &av1d {
@@ -408,12 +341,8 @@
 	status = "okay";
 };
 
-&avsd {
-	status = "okay";
-};
-
 &spdif_tx2 {
-    status = "okay";
+	status = "okay";
 };
 
 &i2s5_8ch {
@@ -457,8 +386,16 @@
 	mem-supply = <&vdd_log_s0>;
 };
 
-&rkvtunnel {
+&i2c4 {
 	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c4m3_xfer>;
+};
+
+&i2c3 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c3m0_xfer>;
 };
 
 &rockchip_suspend {
@@ -1048,12 +985,12 @@
 };
 
 &i2s0_8ch {
-    status = "okay";
-    rockchip,clk-trcm = <1>;
-    pinctrl-0 = <&i2s0_lrck
-             &i2s0_sclk
-             &i2s0_sdi0
-             &i2s0_sdo0>;
+	status = "okay";
+	rockchip,clk-trcm = <1>;
+	pinctrl-0 = <&i2s0_lrck
+			 &i2s0_sclk
+			 &i2s0_sdi0
+			 &i2s0_sdo0>;
 };
 
 &saradc {
@@ -1154,6 +1091,16 @@
 	status = "okay";
 };
 
+&pwm2 {
+	pinctrl-0 = <&pwm2m0_pins>;
+	status = "okay";
+};
+
+&pwm6 {
+	pinctrl-0 = <&pwm6m0_pins>;
+	status = "okay";
+};
+
 &pwm3 {
 	compatible = "rockchip,remotectl-pwm";
 	pinctrl-names = "default";
@@ -1166,18 +1113,26 @@
 	ir_key_lubancat{
 	rockchip,usercode = <0xff00>;
 	rockchip,key_table =
-		<0xeb   KEY_POWER>,
-		<0xec   KEY_MENU>,
-		<0xfe   KEY_BACK>,
-		<0xb7   KEY_HOME>,
-		<0xa3   KEY_WWW>,
-		<0xf4   KEY_VOLUMEUP>,
-		<0xa7   KEY_VOLUMEDOWN>,
-		<0xf8   KEY_REPLY>,
-		<0xfc   KEY_UP>,
-		<0xfd   KEY_DOWN>,
-		<0xf1   KEY_LEFT>,
-		<0xe5   KEY_RIGHT>;
+        <0xba   KEY_POWER>,   //电源按键
+        <0xb8   KEY_MENU>,     //菜单按键
+        <0xbc   KEY_BACK>,      //返回按键
+        <0xbb   KEY_HOME>,      //home键按键
+        <0xea   KEY_PLAY>,      //播放按键
+        <0xbf   KEY_VOLUMEUP>,  //音量加按键
+        <0xe6   KEY_VOLUMEDOWN>,   //音量键按键
+        <0xf6   KEY_FASTFORWARD>,  //快进按键
+        <0xf8   KEY_FASTREVERSE>,  //快退按键
+        <0xf2   KEY_BACKSPACE>,    //BaskSpace按键
+        <0xf3   KEY_1>,            //按键1
+        <0xe7   KEY_2>,
+        <0xa1   KEY_3>,
+        <0xf7   KEY_4>,
+        <0xe3   KEY_5>,
+        <0xa5   KEY_6>,
+        <0xbd   KEY_7>,
+        <0xad   KEY_8>,
+        <0xb5   KEY_9>,
+        <0xe9   KEY_0>;            //按键0
 	};
 };
 
@@ -1236,8 +1191,6 @@
 };
 
 &rkvenc0 {
-	venc-supply = <&vdd_vdenc_s0>;
-	mem-supply = <&vdd_vdenc_mem_s0>;
 	status = "okay";
 };
 
@@ -1246,12 +1199,14 @@
 };
 
 &rkvenc1 {
-	venc-supply = <&vdd_vdenc_s0>;
-	mem-supply = <&vdd_vdenc_mem_s0>;
 	status = "okay";
 };
 
 &rkvenc1_mmu {
+	status = "okay";
+};
+
+&rkvtunnel {
 	status = "okay";
 };
 
@@ -1338,37 +1293,40 @@
 	};
 };
 
+/* PCIe30 PHY Port0 & Port1 */
 &pcie30phy {
 	rockchip,pcie30-phymode = <PHY_MODE_PCIE_AGGREGATION>;
 	status = "okay";
 };
 
+// PCIe30 Port0 & Port1: M.2 M-Key
 &pcie3x4 {
 	reset-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc3v3_sys>;
 	status = "okay";
 };
 
-&combphy1_ps {
-	status = "okay";
-};
-
-&pcie2x1l0 {
-	reset-gpios = <&gpio4 RK_PA5 GPIO_ACTIVE_HIGH>;
-	disable-gpios = <&gpio0 RK_PC6 GPIO_ACTIVE_HIGH>;
-	status = "okay";
-};
-
-/* SATA30/PCIe20x1_2 Combo PHY */
+/* SATA30_HOST0/PCIe20x1_2 Combo PHY */
 &combphy0_ps {
 	status = "okay";
 };
 
+// Mini-PCIe
 &pcie2x1l2 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pcie_disable_pin>;
 	reset-gpios = <&gpio3 RK_PD1 GPIO_ACTIVE_HIGH>;
 	disable-gpios = <&gpio3 RK_PC1 GPIO_ACTIVE_HIGH>;
+	status = "okay";
+};
+
+/* SATA30_HOST1/PCIe20x1_0 Combo PHY */
+&combphy1_ps {
+	status = "okay";
+};
+
+// M.2 E-Key
+&pcie2x1l0 {
+	reset-gpios = <&gpio4 RK_PA5 GPIO_ACTIVE_HIGH>;
+	disable-gpios = <&gpio0 RK_PC6 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 };
 
@@ -1429,7 +1387,7 @@
 &usbdrd_dwc3_0 {
 	dr_mode = "otg";
 	usb-role-switch;
-	
+
 	status = "okay";
 	port {
 		#address-cells = <1>;
@@ -1459,7 +1417,7 @@
 	status = "okay";
 };
 
-/* USB3.1/SATA/PCIe20x1_1 Combo PHY */
+/* USB30_HOST2/SATA30_HOST2/PCIe20x1_1 Combo PHY */
 &combphy2_psu {
 	status = "okay";
 };
@@ -1525,14 +1483,13 @@
 };
 
 /* dp0 display */
-
 &dp0 {
 	status = "okay";
 };
 
 &route_dp0 {
 	status = "okay";
-	connect = <&vp1_out_dp0>;	
+	connect = <&vp1_out_dp0>;
 };
 
 &dp0_in_vp0 {
@@ -1549,6 +1506,7 @@
 
 &vop {
 	status = "okay";
+	// disable-win-move;
 };
 
 &vop_mmu {
@@ -1595,25 +1553,12 @@
 	rockchip,primary-plane = <ROCKCHIP_VOP2_ESMART3>;
 };
 
-&display_subsystem {
-	clocks = <&hdptxphy_hdmi0>, <&hdptxphy_hdmi1>;
-	clock-names = "hdmi0_phy_pll", "hdmi1_phy_pll";
-};
-
-&hdptxphy_hdmi0 {
-	status = "okay";
-};
-
-&hdptxphy_hdmi1 {
-	status = "okay";
-};
-
 &pinctrl {
-    hym8563 {
-        hym8563_int: hym8563-int {
-            rockchip,pins = <0 RK_PB0 RK_FUNC_GPIO &pcfg_pull_up>;
-        };
-    };
+	hym8563 {
+		hym8563_int: hym8563-int {
+			rockchip,pins = <0 RK_PB0 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
 
 	headphone {
 		hp_det: hp-det {
@@ -1649,12 +1594,6 @@
 		};
 		pinctrl_pca9535_2: pinctrl-pca9535-2{
 			rockchip,pins = <2 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-	};
-
-	pcie {
-		pcie_disable_pin: pcie-disable-pin{
-			rockchip,pins = <3 RK_PC1 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
 };

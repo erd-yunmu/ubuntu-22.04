@@ -7,6 +7,7 @@
 #include <boot_rkimg.h>
 #include <stdlib.h>
 #include <attestation_key.h>
+#include <id_attestation.h>
 #include <write_keybox.h>
 #include <keymaster.h>
 #include <optee_include/OpteeClientApiLib.h>
@@ -18,6 +19,7 @@
 #define	BOOT_FROM_EMMC	(1 << 1)
 #define	WIDEVINE_TAG	"KBOX"
 #define	ATTESTATION_TAG	"ATTE"
+#define	ID_ATTESTATION_TAG "IDAT"
 #define PLAYREADY30_TAG	"SL30"
 
 TEEC_Result write_to_security_storage(uint8_t is_use_rpmb,
@@ -151,9 +153,14 @@ uint32_t rk_send_keybox_to_ta(uint8_t *filename, uint32_t filename_size,
 						    TEEC_NONE,
 						    TEEC_NONE);
 
-	/* 0 nand or emmc "security" partition , 1 rpmb */
-	TeecOperation.params[0].value.a =
-		(dev_desc->if_type == IF_TYPE_MMC) ? 1 : 0;
+	/*0 nand or emmc "security" partition , 1 rpmb*/
+	if (dev_desc->if_type == IF_TYPE_MMC && dev_desc->devnum == 0)//emmc
+		TeecOperation.params[0].value.a = 1;
+	else if (dev_desc->if_type == IF_TYPE_SCSI)//ufs
+		TeecOperation.params[0].value.a = 1;
+	else
+		TeecOperation.params[0].value.a = 0;
+
 #ifdef CONFIG_OPTEE_ALWAYS_USE_SECURITY_PARTITION
 	TeecOperation.params[0].value.a = 0;
 #endif
@@ -224,6 +231,7 @@ uint32_t write_keybox_to_secure_storage(uint8_t *received_data, uint32_t len)
 {
 	uint8_t *widevine_data;
 	uint8_t *attestation_data;
+	uint8_t *id_attestation_data;
 	uint8_t *playready_sl30_data;
 	uint32_t key_size;
 	uint32_t data_size;
@@ -237,7 +245,15 @@ uint32_t write_keybox_to_secure_storage(uint8_t *received_data, uint32_t len)
 		printf("%s: dev_desc is NULL!\n", __func__);
 		return -EIO;
 	}
-	is_use_rpmb = (dev_desc->if_type == IF_TYPE_MMC) ? 1 : 0;
+
+	/*0 nand or emmc "security" partition , 1 rpmb*/
+	if (dev_desc->if_type == IF_TYPE_MMC && dev_desc->devnum == 0)//emmc
+		is_use_rpmb = 1;
+	else if (dev_desc->if_type == IF_TYPE_SCSI)//ufs
+		is_use_rpmb = 1;
+	else
+		is_use_rpmb = 0;
+
 #ifdef CONFIG_OPTEE_ALWAYS_USE_SECURITY_PARTITION
 	is_use_rpmb = 0;
 #endif
@@ -255,6 +271,8 @@ uint32_t write_keybox_to_secure_storage(uint8_t *received_data, uint32_t len)
 					      WIDEVINE_TAG, len);
 	attestation_data = (uint8_t *)new_strstr((char *)received_data,
 						 ATTESTATION_TAG, len);
+	id_attestation_data = (uint8_t *)new_strstr((char *)received_data,
+						    ID_ATTESTATION_TAG, len);
 	playready_sl30_data = (uint8_t *)new_strstr((char *)received_data,
 						    PLAYREADY30_TAG, len);
 	if (widevine_data) {
@@ -292,6 +310,16 @@ uint32_t write_keybox_to_secure_storage(uint8_t *received_data, uint32_t len)
 		} else {
 			rc = -EIO;
 			printf("write attestation key to secure storage fail\n");
+		}
+	} else if (id_attestation_data) {
+		/* id attestation */
+		ret = write_id_attestation_to_secure_storage(id_attestation_data, len);
+		if (ret == ATAP_RESULT_OK) {
+			rc = 0;
+			printf("write id attestation success!\n");
+		} else {
+			rc = -EIO;
+			printf("write id attestation failed\n");
 		}
 	} else if (playready_sl30_data) {
 		/* PlayReady SL3000 root key */

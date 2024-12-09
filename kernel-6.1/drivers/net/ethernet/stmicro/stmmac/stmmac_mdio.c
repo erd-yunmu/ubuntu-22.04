@@ -339,6 +339,34 @@ err_disable_clks:
 }
 
 /**
+ * stmmac_mdio_idle
+ * @bus: points to the mii_bus structure
+ * Description: reset the MII bus
+ */
+int stmmac_mdio_idle(struct mii_bus *bus)
+{
+#if IS_ENABLED(CONFIG_STMMAC_PLATFORM)
+	struct net_device *ndev = bus->priv;
+	struct stmmac_priv *priv = netdev_priv(ndev);
+
+#ifdef CONFIG_OF
+	if (priv->device->of_node) {
+		struct gpio_desc *reset_gpio;
+
+		reset_gpio = devm_gpiod_get_optional(priv->device,
+						     "snps,reset",
+						     GPIOD_OUT_HIGH);
+		if (IS_ERR(reset_gpio))
+			return PTR_ERR(reset_gpio);
+
+		devm_gpiod_put(priv->device, reset_gpio);
+	}
+#endif
+#endif
+	return 0;
+}
+
+/**
  * stmmac_mdio_reset
  * @bus: points to the mii_bus structure
  * Description: reset the MII bus
@@ -500,7 +528,7 @@ int stmmac_mdio_register(struct net_device *ndev)
 	stmmac_mdio_write(new_bus,0,25,0x1801);
 	stmmac_mdio_write(new_bus,0,31,0);
 	stmmac_mdio_write(new_bus,0,0,0x8000);
-
+	
 	/* Looks like we need a dummy read for XGMAC only and C45 PHYs */
 	if (priv->plat->has_xgmac)
 		stmmac_xgmac2_mdio_read(new_bus, 0, MII_ADDR_C45);

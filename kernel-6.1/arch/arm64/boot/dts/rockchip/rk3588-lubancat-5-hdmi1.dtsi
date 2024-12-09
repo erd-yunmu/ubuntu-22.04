@@ -13,7 +13,7 @@
 
 &route_hdmi1{
 	status = "okay";
-	connect = <&vp1_out_hdmi1>;
+	connect = <&vp2_out_hdmi1>;
 };
 
 &hdmi1 {
@@ -21,7 +21,15 @@
 	status = "okay";
 };
 
+&hdmi1_in_vp0 {
+	status = "disabled";
+};
+
 &hdmi1_in_vp1 {
+	status = "disabled";
+};
+
+&hdmi1_in_vp2 {
 	status = "okay";
 };
 

@@ -416,6 +416,7 @@ static void radxa_display_8hd_remove(struct mipi_dsi_device *dsi)
 
 	mipi_dsi_detach(dsi);
 	drm_panel_remove(&jadard_jd9365da->panel);
+
 }
 
 static const struct of_device_id radxa_display_8hd_of_match[] = {

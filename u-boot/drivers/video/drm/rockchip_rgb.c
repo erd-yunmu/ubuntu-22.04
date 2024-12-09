@@ -13,13 +13,16 @@
 #include <dm/read.h>
 #include <dm/pinctrl.h>
 #include <linux/media-bus-format.h>
+#include <asm/gpio.h>
+#include <backlight.h>
 
 #include "rockchip_display.h"
 #include "rockchip_crtc.h"
 #include "rockchip_connector.h"
 #include "rockchip_phy.h"
+#include "rockchip_panel.h"
 
-#define HIWORD_UPDATE(v, h, l)		(((v) << (l)) | (GENMASK(h, l) << 16))
+#define HIWORD_UPDATE(v, l, h)		(((v) << (l)) | (GENMASK(h, l) << 16))
 
 #define PX30_GRF_PD_VO_CON1		0x0438
 #define PX30_RGB_DATA_SYNC_BYPASS(v)	HIWORD_UPDATE(v, 3, 3)
@@ -48,17 +51,32 @@
 #define RK3368_GRF_SOC_CON15		0x043c
 #define RK3368_FORCE_JETAG(v)		HIWORD_UPDATE(v,  13,  13)
 
+#define RK3506_GRF_SOC_CON2		0x0008
+#define RK3506_GRF_VOP_DATA_BYPASS(v)	HIWORD_UPDATE(v, 1, 2)
+
 #define RK3562_GRF_IOC_VO_IO_CON	0x10500
 #define RK3562_RGB_DATA_BYPASS(v)	HIWORD_UPDATE(v, 6, 6)
 
 #define RK3568_GRF_VO_CON1		0X0364
 #define RK3568_RGB_DATA_BYPASS(v)	HIWORD_UPDATE(v, 6, 6)
 
+#define RK3576_VCCIO_IOC_MISC_CON8	0x6420
+#define RK3576_VOP_MCU_SEL(v)		HIWORD_UPDATE(v, 10, 10)
+#define RK3576_VOP_DLL_SEL(v)		HIWORD_UPDATE(v, 8, 8)
+#define RK3576_VOP_DCLK_DELAYLINE(v)	HIWORD_UPDATE(v, 0, 6)
+
 struct rockchip_rgb;
 
 struct rockchip_rgb_funcs {
 	void (*prepare)(struct rockchip_rgb *rgb, int pipe);
 	void (*unprepare)(struct rockchip_rgb *rgb);
+};
+
+struct rockchip_rgb_data {
+	u32 rgb_max_dclk_rate;
+	u32 mcu_max_dclk_rate;
+	u32 dclk_delayline;
+	const struct rockchip_rgb_funcs *funcs;
 };
 
 struct rockchip_rgb {
@@ -69,7 +87,67 @@ struct rockchip_rgb {
 	bool data_sync_bypass;
 	struct rockchip_phy *phy;
 	const struct rockchip_rgb_funcs *funcs;
+	u32 max_dclk_rate;
+	u32 dclk_delayline;
 };
+
+struct mcu_cmd_header {
+	u8 data_type;
+	u8 delay;
+	u8 payload_length;
+} __packed;
+
+struct mcu_cmd_desc {
+	struct mcu_cmd_header header;
+	const u8 *payload;
+};
+
+struct mcu_cmd_seq {
+	struct mcu_cmd_desc *cmds;
+	unsigned int cmd_cnt;
+};
+
+struct rockchip_mcu_panel_desc {
+	struct mcu_cmd_seq *init_seq;
+	struct mcu_cmd_seq *exit_seq;
+
+	struct {
+		unsigned int width;
+		unsigned int height;
+	} size;
+
+	struct {
+		unsigned int prepare;
+		unsigned int enable;
+		unsigned int disable;
+		unsigned int unprepare;
+		unsigned int reset;
+		unsigned int init;
+	} delay;
+
+	unsigned int bpc;
+	u32 bus_format;
+	u32 bus_flags;
+	bool power_invert;
+};
+
+struct rockchip_mcu_panel {
+	struct rockchip_panel base;
+	struct rockchip_mcu_panel_desc *desc;
+	struct udevice *power_supply;
+	struct udevice *backlight;
+
+	struct gpio_desc enable_gpio;
+	struct gpio_desc reset_gpio;
+
+	bool prepared;
+	bool enabled;
+};
+
+static inline struct rockchip_mcu_panel *to_rockchip_mcu_panel(struct rockchip_panel *panel)
+{
+	return container_of(panel, struct rockchip_mcu_panel, base);
+}
 
 static int rockchip_rgb_connector_prepare(struct rockchip_connector *conn,
 					  struct display_state *state)
@@ -118,7 +196,8 @@ static int rockchip_rgb_connector_init(struct rockchip_connector *conn, struct d
 
 	rgb->phy = conn->phy;
 
-	conn_state->color_space = V4L2_COLORSPACE_DEFAULT;
+	conn_state->color_range = DRM_COLOR_YCBCR_FULL_RANGE;
+	conn_state->color_encoding = DRM_COLOR_YCBCR_BT709;
 	conn_state->disp_info  = rockchip_get_disp_info(conn_state->type, rgb->id);
 
 	switch (conn_state->bus_format) {
@@ -130,15 +209,22 @@ static int rockchip_rgb_connector_init(struct rockchip_connector *conn, struct d
 		conn_state->output_mode = ROCKCHIP_OUT_MODE_P565;
 		conn_state->output_if = VOP_OUTPUT_IF_RGB;
 		break;
-	case MEDIA_BUS_FMT_SRGB888_3X8:
-	case MEDIA_BUS_FMT_SBGR888_3X8:
-	case MEDIA_BUS_FMT_SRBG888_3X8:
+	case MEDIA_BUS_FMT_RGB565_2X8_LE:
+	case MEDIA_BUS_FMT_BGR565_2X8_LE:
+		conn_state->output_mode = ROCKCHIP_OUT_MODE_S565;
+		conn_state->output_if = VOP_OUTPUT_IF_RGB;
+		break;
+	case MEDIA_BUS_FMT_RGB666_3X6:
+		conn_state->output_mode = ROCKCHIP_OUT_MODE_S666;
+		conn_state->output_if = VOP_OUTPUT_IF_RGB;
+		break;
+	case MEDIA_BUS_FMT_RGB888_3X8:
+	case MEDIA_BUS_FMT_BGR888_3X8:
 		conn_state->output_mode = ROCKCHIP_OUT_MODE_S888;
 		conn_state->output_if = VOP_OUTPUT_IF_RGB;
 		break;
-	case MEDIA_BUS_FMT_SRGB888_DUMMY_4X8:
-	case MEDIA_BUS_FMT_SBGR888_DUMMY_4X8:
-	case MEDIA_BUS_FMT_SRBG888_DUMMY_4X8:
+	case MEDIA_BUS_FMT_RGB888_DUMMY_4X8:
+	case MEDIA_BUS_FMT_BGR888_DUMMY_4X8:
 		conn_state->output_mode = ROCKCHIP_OUT_MODE_S888_DUMMY;
 		conn_state->output_if = VOP_OUTPUT_IF_RGB;
 		break;
@@ -148,6 +234,8 @@ static int rockchip_rgb_connector_init(struct rockchip_connector *conn, struct d
 	case MEDIA_BUS_FMT_VYUY8_2X8:
 		conn_state->output_mode = ROCKCHIP_OUT_MODE_BT656;
 		conn_state->output_if = VOP_OUTPUT_IF_BT656;
+		conn_state->color_range = DRM_COLOR_YCBCR_LIMITED_RANGE;
+		conn_state->color_encoding = DRM_COLOR_YCBCR_BT601;
 		break;
 	case MEDIA_BUS_FMT_YUYV8_1X16:
 	case MEDIA_BUS_FMT_YVYU8_1X16:
@@ -155,6 +243,7 @@ static int rockchip_rgb_connector_init(struct rockchip_connector *conn, struct d
 	case MEDIA_BUS_FMT_VYUY8_1X16:
 		conn_state->output_mode = ROCKCHIP_OUT_MODE_BT1120;
 		conn_state->output_if = VOP_OUTPUT_IF_BT1120;
+		conn_state->color_range = DRM_COLOR_YCBCR_LIMITED_RANGE;
 		break;
 	case MEDIA_BUS_FMT_RGB888_1X24:
 	case MEDIA_BUS_FMT_RGB666_1X24_CPADHI:
@@ -167,23 +256,343 @@ static int rockchip_rgb_connector_init(struct rockchip_connector *conn, struct d
 	return 0;
 }
 
+static int rockchip_rgb_connector_mode_valid(struct rockchip_connector *conn,
+					     struct display_state *state)
+{
+	struct rockchip_rgb *rgb = dev_get_priv(conn->dev);
+	struct connector_state *conn_state = &state->conn_state;
+	struct crtc_state *crtc_state = &state->crtc_state;
+	struct drm_display_mode *mode = &conn_state->mode;
+	u32 request_clock = mode->clock;
+	u32 max_clock = rgb->max_dclk_rate;
+
+	if (mode->flags & DRM_MODE_FLAG_DBLCLK)
+		request_clock *= 2;
+
+	if (rgb->data_sync_bypass)
+		request_clock *= rockchip_drm_get_cycles_per_pixel(conn_state->bus_format) *
+				 (crtc_state->mcu_timing.mcu_pix_total + 1);
+
+	if (max_clock != 0 && request_clock > max_clock) {
+		printf("mode [%dx%d] clock %d is higher than max_clock %d\n",
+		       mode->hdisplay, mode->vdisplay, request_clock, max_clock);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static const struct rockchip_connector_funcs rockchip_rgb_connector_funcs = {
 	.init = rockchip_rgb_connector_init,
 	.prepare = rockchip_rgb_connector_prepare,
 	.unprepare = rockchip_rgb_connector_unprepare,
+	.mode_valid = rockchip_rgb_connector_mode_valid,
 };
+
+static int rockchip_mcu_panel_send_cmds(struct display_state *state,
+					struct mcu_cmd_seq *cmds)
+{
+	int i;
+
+	if (!cmds)
+		return -EINVAL;
+
+	display_send_mcu_cmd(state, MCU_SETBYPASS, 1);
+	for (i = 0; i < cmds->cmd_cnt; i++) {
+		struct mcu_cmd_desc *desc = &cmds->cmds[i];
+		int value = 0;
+
+		value = desc->payload[0];
+		display_send_mcu_cmd(state, desc->header.data_type, value);
+
+		if (desc->header.delay)
+			mdelay(desc->header.delay);
+	}
+	display_send_mcu_cmd(state, MCU_SETBYPASS, 0);
+
+	return 0;
+}
+
+static void rockchip_mcu_panel_prepare(struct rockchip_panel *panel)
+{
+	struct rockchip_mcu_panel *mcu_panel = to_rockchip_mcu_panel(panel);
+	int ret;
+
+	if (mcu_panel->prepared)
+		return;
+
+	if (dm_gpio_is_valid(&mcu_panel->enable_gpio))
+		dm_gpio_set_value(&mcu_panel->enable_gpio, 1);
+
+	if (mcu_panel->desc->delay.prepare)
+		mdelay(mcu_panel->desc->delay.prepare);
+
+	if (dm_gpio_is_valid(&mcu_panel->reset_gpio))
+		dm_gpio_set_value(&mcu_panel->reset_gpio, 1);
+
+	if (mcu_panel->desc->delay.reset)
+		mdelay(mcu_panel->desc->delay.reset);
+
+	if (dm_gpio_is_valid(&mcu_panel->reset_gpio))
+		dm_gpio_set_value(&mcu_panel->reset_gpio, 0);
+
+	if (mcu_panel->desc->delay.init)
+		mdelay(mcu_panel->desc->delay.init);
+
+	if (mcu_panel->desc->init_seq) {
+		ret = rockchip_mcu_panel_send_cmds(panel->state, mcu_panel->desc->init_seq);
+		if (ret)
+			printf("failed to send mcu panel init cmds: %d\n", ret);
+	}
+
+	mcu_panel->prepared = true;
+}
+
+static void rockchip_mcu_panel_unprepare(struct rockchip_panel *panel)
+{
+	struct rockchip_mcu_panel *mcu_panel = to_rockchip_mcu_panel(panel);
+	int ret;
+
+	if (!mcu_panel->prepared)
+		return;
+
+	if (mcu_panel->desc->exit_seq) {
+		ret = rockchip_mcu_panel_send_cmds(panel->state, mcu_panel->desc->exit_seq);
+		if (ret)
+			printf("failed to send mcu panel exit cmds: %d\n", ret);
+	}
+
+	if (dm_gpio_is_valid(&mcu_panel->reset_gpio))
+		dm_gpio_set_value(&mcu_panel->reset_gpio, 1);
+
+	if (dm_gpio_is_valid(&mcu_panel->enable_gpio))
+		dm_gpio_set_value(&mcu_panel->enable_gpio, 0);
+
+	if (mcu_panel->desc->delay.unprepare)
+		mdelay(mcu_panel->desc->delay.unprepare);
+
+	mcu_panel->prepared = false;
+}
+
+static void rockchip_mcu_panel_enable(struct rockchip_panel *panel)
+{
+	struct rockchip_mcu_panel *mcu_panel = to_rockchip_mcu_panel(panel);
+
+	if (mcu_panel->enabled)
+		return;
+
+	if (mcu_panel->desc->delay.enable)
+		mdelay(mcu_panel->desc->delay.enable);
+
+	if (mcu_panel->backlight)
+		backlight_enable(mcu_panel->backlight);
+
+	mcu_panel->enabled = true;
+}
+
+static void rockchip_mcu_panel_disable(struct rockchip_panel *panel)
+{
+	struct rockchip_mcu_panel *mcu_panel = to_rockchip_mcu_panel(panel);
+
+	if (!mcu_panel->enabled)
+		return;
+
+	if (mcu_panel->backlight)
+		backlight_disable(mcu_panel->backlight);
+
+	if (mcu_panel->desc->delay.disable)
+		mdelay(mcu_panel->desc->delay.disable);
+
+	mcu_panel->enabled = false;
+}
+
+static const struct rockchip_panel_funcs rockchip_mcu_panel_funcs = {
+	.prepare = rockchip_mcu_panel_prepare,
+	.unprepare = rockchip_mcu_panel_unprepare,
+	.enable = rockchip_mcu_panel_enable,
+	.disable = rockchip_mcu_panel_disable,
+};
+
+static int rockchip_mcu_panel_parse_cmds(const u8 *data, int length,
+					 struct mcu_cmd_seq *pcmds)
+{
+	int len;
+	const u8 *buf;
+	const struct mcu_cmd_header *header;
+	int i, cnt = 0;
+
+	/* scan commands */
+	cnt = 0;
+	buf = data;
+	len = length;
+	while (len > sizeof(*header)) {
+		header = (const struct mcu_cmd_header *)buf;
+		buf += sizeof(*header) + header->payload_length;
+		len -= sizeof(*header) + header->payload_length;
+		cnt++;
+	}
+
+	pcmds->cmds = calloc(cnt, sizeof(struct mcu_cmd_desc));
+	if (!pcmds->cmds)
+		return -ENOMEM;
+
+	pcmds->cmd_cnt = cnt;
+
+	buf = data;
+	len = length;
+	for (i = 0; i < cnt; i++) {
+		struct mcu_cmd_desc *desc = &pcmds->cmds[i];
+
+		header = (const struct mcu_cmd_header *)buf;
+		length -= sizeof(*header);
+		buf += sizeof(*header);
+		desc->header.data_type = header->data_type;
+		desc->header.delay = header->delay;
+		desc->header.payload_length = header->payload_length;
+		desc->payload = buf;
+		buf += header->payload_length;
+		length -= header->payload_length;
+	}
+
+	return 0;
+}
+
+static int rockchip_mcu_panel_init(struct rockchip_mcu_panel *mcu_panel, ofnode mcu_panel_node)
+{
+	const void *data;
+	int len;
+	int ret;
+
+	ret = gpio_request_by_name_nodev(mcu_panel_node, "enable-gpios", 0,
+					 &mcu_panel->enable_gpio, GPIOD_IS_OUT);
+	if (ret && ret != -ENOENT) {
+		printf("%s: Cannot get mcu panel enable GPIO: %d\n", __func__, ret);
+		return ret;
+	}
+
+	ret = gpio_request_by_name_nodev(mcu_panel_node, "reset-gpios", 0,
+					 &mcu_panel->reset_gpio, GPIOD_IS_OUT);
+	if (ret && ret != -ENOENT) {
+		printf("%s: Cannot get mcu panel reset GPIO: %d\n", __func__, ret);
+		return ret;
+	}
+
+	mcu_panel->desc = malloc(sizeof(struct rockchip_mcu_panel_desc));
+	if (!mcu_panel->desc)
+		return -ENOMEM;
+
+	mcu_panel->desc->power_invert = ofnode_read_bool(mcu_panel_node, "power-invert");
+
+	mcu_panel->desc->delay.prepare = ofnode_read_u32_default(mcu_panel_node, "prepare-delay-ms", 0);
+	mcu_panel->desc->delay.unprepare = ofnode_read_u32_default(mcu_panel_node, "unprepare-delay-ms", 0);
+	mcu_panel->desc->delay.enable = ofnode_read_u32_default(mcu_panel_node, "enable-delay-ms", 0);
+	mcu_panel->desc->delay.disable = ofnode_read_u32_default(mcu_panel_node, "disable-delay-ms", 0);
+	mcu_panel->desc->delay.init = ofnode_read_u32_default(mcu_panel_node, "init-delay-ms", 0);
+	mcu_panel->desc->delay.reset = ofnode_read_u32_default(mcu_panel_node, "reset-delay-ms", 0);
+
+	mcu_panel->desc->bus_format = ofnode_read_u32_default(mcu_panel_node, "bus-format",
+							      MEDIA_BUS_FMT_RBG888_1X24);
+	mcu_panel->desc->bpc = ofnode_read_u32_default(mcu_panel_node, "bpc", 8);
+
+	data = ofnode_get_property(mcu_panel_node, "panel-init-sequence", &len);
+	if (data) {
+		mcu_panel->desc->init_seq = calloc(1, sizeof(*mcu_panel->desc->init_seq));
+		if (!mcu_panel->desc->init_seq)
+			return -ENOMEM;
+
+		ret = rockchip_mcu_panel_parse_cmds(data, len, mcu_panel->desc->init_seq);
+		if (ret) {
+			printf("failed to parse panel init sequence\n");
+			goto free_on_cmds;
+		}
+	}
+
+	data = ofnode_get_property(mcu_panel_node, "panel-exit-sequence", &len);
+	if (data) {
+		mcu_panel->desc->exit_seq = calloc(1, sizeof(*mcu_panel->desc->exit_seq));
+		if (!mcu_panel->desc->exit_seq) {
+			ret = -ENOMEM;
+			goto free_on_cmds;
+		}
+
+		ret = rockchip_mcu_panel_parse_cmds(data, len, mcu_panel->desc->exit_seq);
+		if (ret) {
+			printf("failed to parse panel exit sequence\n");
+			goto free_cmds;
+		}
+	}
+
+	return 0;
+
+free_cmds:
+	free(mcu_panel->desc->exit_seq);
+free_on_cmds:
+	free(mcu_panel->desc->init_seq);
+	return ret;
+}
 
 static int rockchip_rgb_probe(struct udevice *dev)
 {
 	struct rockchip_rgb *rgb = dev_get_priv(dev);
+	const struct rockchip_rgb_data *rgb_data;
+	ofnode mcu_panel_node;
+	int phandle;
+	int ret;
 
-	rgb->dev = dev;
-	rgb->funcs = (const struct rockchip_rgb_funcs *)dev_get_driver_data(dev);
-	rgb->grf = syscon_get_regmap(dev_get_parent(dev));
 	rgb->data_sync_bypass = dev_read_bool(dev, "rockchip,data-sync-bypass");
+	rgb_data = (const struct rockchip_rgb_data *)dev_get_driver_data(dev);
+	if (rgb_data) {
+		rgb->funcs = rgb_data->funcs;
+		if (rgb->data_sync_bypass)
+			rgb->max_dclk_rate = rgb_data->mcu_max_dclk_rate;
+		else
+			rgb->max_dclk_rate = rgb_data->rgb_max_dclk_rate;
+		rgb->dclk_delayline = rgb_data->dclk_delayline;
+	}
+	rgb->dev = dev;
+	rgb->grf = syscon_get_regmap(dev_get_parent(dev));
 	rgb->id = of_alias_get_id(ofnode_to_np(dev->node), "rgb");
 	if (rgb->id < 0)
 		rgb->id = 0;
+
+	mcu_panel_node = dev_read_subnode(dev, "mcu-panel");
+	if (ofnode_valid(mcu_panel_node) && ofnode_is_available(mcu_panel_node)) {
+		struct rockchip_mcu_panel *mcu_panel;
+
+		mcu_panel = malloc(sizeof(struct rockchip_mcu_panel));
+		if (!mcu_panel) {
+			printf("failed to alloc mcu_panel data\n");
+			return -ENOMEM;
+		}
+
+		ret = rockchip_mcu_panel_init(mcu_panel, mcu_panel_node);
+		if (ret < 0) {
+			printf("failed to init mcu_panel: %d\n", ret);
+			return ret;
+		}
+
+		phandle = ofnode_read_u32_default(mcu_panel_node, "backlight", -1);
+		if (phandle < 0) {
+			printf("failed to find backlight phandle\n");
+			return -EINVAL;
+		}
+
+		ret = uclass_get_device_by_phandle_id(UCLASS_PANEL_BACKLIGHT, phandle,
+						      &mcu_panel->backlight);
+		if (ret && ret != -ENOENT) {
+			printf("%s: failed to get backlight device: %d\n", __func__, ret);
+			return ret;
+		}
+
+		mcu_panel->base.dev = dev;
+		mcu_panel->base.bus_format = mcu_panel->desc->bus_format;
+		mcu_panel->base.bpc = mcu_panel->desc->bpc;
+		mcu_panel->base.funcs = &rockchip_mcu_panel_funcs;
+		mcu_panel->enabled = false;
+		mcu_panel->prepared = false;
+
+		rgb->connector.panel = &mcu_panel->base;
+	}
 
 	rockchip_connector_bind(&rgb->connector, dev, rgb->id, &rockchip_rgb_connector_funcs,
 				NULL, DRM_MODE_CONNECTOR_LVDS);
@@ -203,6 +612,12 @@ static const struct rockchip_rgb_funcs rv1106_rgb_funcs = {
 	.prepare = rv1106_rgb_prepare,
 };
 
+static const struct rockchip_rgb_data rv1106_rgb = {
+	.rgb_max_dclk_rate = 74250,
+	.mcu_max_dclk_rate = 150000,
+	.funcs = &rv1106_rgb_funcs,
+};
+
 static void rv1126_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
 {
 	regmap_write(rgb->grf, RV1126_GRF_IOFUNC_CON3,
@@ -211,6 +626,10 @@ static void rv1126_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
 
 static const struct rockchip_rgb_funcs rv1126_rgb_funcs = {
 	.prepare = rv1126_rgb_prepare,
+};
+
+static const struct rockchip_rgb_data rv1126_rgb = {
+	.funcs = &rv1126_rgb_funcs,
 };
 
 static void px30_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
@@ -223,6 +642,10 @@ static const struct rockchip_rgb_funcs px30_rgb_funcs = {
 	.prepare = px30_rgb_prepare,
 };
 
+static const struct rockchip_rgb_data px30_rgb = {
+	.funcs = &px30_rgb_funcs,
+};
+
 static void rk1808_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
 {
 	regmap_write(rgb->grf, RK1808_GRF_PD_VO_CON1,
@@ -231,6 +654,10 @@ static void rk1808_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
 
 static const struct rockchip_rgb_funcs rk1808_rgb_funcs = {
 	.prepare = rk1808_rgb_prepare,
+};
+
+static const struct rockchip_rgb_data rk1808_rgb = {
+	.funcs = &rk1808_rgb_funcs,
 };
 
 static void rk3288_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
@@ -254,6 +681,10 @@ static const struct rockchip_rgb_funcs rk3288_rgb_funcs = {
 	.unprepare = rk3288_rgb_unprepare,
 };
 
+static const struct rockchip_rgb_data rk3288_rgb = {
+	.funcs = &rk3288_rgb_funcs,
+};
+
 static void rk3368_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
 {
 	regmap_write(rgb->grf, RK3368_GRF_SOC_CON15, RK3368_FORCE_JETAG(0));
@@ -261,6 +692,26 @@ static void rk3368_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
 
 static const struct rockchip_rgb_funcs rk3368_rgb_funcs = {
 	.prepare = rk3368_rgb_prepare,
+};
+
+static const struct rockchip_rgb_data rk3368_rgb = {
+	.funcs = &rk3368_rgb_funcs,
+};
+
+static void rk3506_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
+{
+	regmap_write(rgb->grf, RK3506_GRF_SOC_CON2,
+		     RK3506_GRF_VOP_DATA_BYPASS(rgb->data_sync_bypass ? 0x3 : 0x0));
+}
+
+static const struct rockchip_rgb_funcs rk3506_rgb_funcs = {
+	.prepare = rk3506_rgb_prepare,
+};
+
+static const struct rockchip_rgb_data rk3506_rgb = {
+	.rgb_max_dclk_rate = 120000,
+	.mcu_max_dclk_rate = 120000,
+	.funcs = &rk3506_rgb_funcs,
 };
 
 static void rk3562_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
@@ -273,6 +724,10 @@ static const struct rockchip_rgb_funcs rk3562_rgb_funcs = {
 	.prepare = rk3562_rgb_prepare,
 };
 
+static const struct rockchip_rgb_data rk3562_rgb = {
+	.funcs = &rk3562_rgb_funcs,
+};
+
 static void rk3568_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
 {
 	regmap_write(rgb->grf, RK3568_GRF_VO_CON1, RK3568_RGB_DATA_BYPASS(rgb->data_sync_bypass));
@@ -282,14 +737,37 @@ static const struct rockchip_rgb_funcs rk3568_rgb_funcs = {
 	.prepare = rk3568_rgb_prepare,
 };
 
+static const struct rockchip_rgb_data rk3568_rgb = {
+	.funcs = &rk3568_rgb_funcs,
+};
+
+static void rk3576_rgb_prepare(struct rockchip_rgb *rgb, int pipe)
+{
+	regmap_write(rgb->grf, RK3576_VCCIO_IOC_MISC_CON8,
+		     RK3576_VOP_MCU_SEL(rgb->data_sync_bypass));
+	regmap_write(rgb->grf, RK3576_VCCIO_IOC_MISC_CON8,
+		     RK3576_VOP_DLL_SEL(true));
+	regmap_write(rgb->grf, RK3576_VCCIO_IOC_MISC_CON8,
+		     RK3576_VOP_DCLK_DELAYLINE(rgb->dclk_delayline));
+}
+
+static const struct rockchip_rgb_funcs rk3576_rgb_funcs = {
+	.prepare = rk3576_rgb_prepare,
+};
+
+static const struct rockchip_rgb_data rk3576_rgb = {
+	.dclk_delayline = 5,
+	.funcs = &rk3576_rgb_funcs,
+};
+
 static const struct udevice_id rockchip_rgb_ids[] = {
 	{
 		.compatible = "rockchip,px30-rgb",
-		.data = (ulong)&px30_rgb_funcs,
+		.data = (ulong)&px30_rgb,
 	},
 	{
 		.compatible = "rockchip,rk1808-rgb",
-		.data = (ulong)&rk1808_rgb_funcs,
+		.data = (ulong)&rk1808_rgb,
 	},
 	{
 		.compatible = "rockchip,rk3066-rgb",
@@ -299,33 +777,44 @@ static const struct udevice_id rockchip_rgb_ids[] = {
 	},
 	{
 		.compatible = "rockchip,rk3288-rgb",
-		.data = (ulong)&rk3288_rgb_funcs,
+		.data = (ulong)&rk3288_rgb,
 	},
 	{
 		.compatible = "rockchip,rk3308-rgb",
 	},
 	{
 		.compatible = "rockchip,rk3368-rgb",
-		.data = (ulong)&rk3368_rgb_funcs,
+		.data = (ulong)&rk3368_rgb,
+	},
+	{
+		.compatible = "rockchip,rk3506-rgb",
+		.data = (ulong)&rk3506_rgb,
 	},
 	{
 		.compatible = "rockchip,rk3562-rgb",
-		.data = (ulong)&rk3562_rgb_funcs,
+		.data = (ulong)&rk3562_rgb,
 	},
 	{
 		.compatible = "rockchip,rk3568-rgb",
-		.data = (ulong)&rk3568_rgb_funcs,
+		.data = (ulong)&rk3568_rgb,
+	},
+	{
+		.compatible = "rockchip,rk3576-rgb",
+		.data = (ulong)&rk3576_rgb,
+	},
+	{
+		.compatible = "rockchip,rk3588-rgb",
 	},
 	{
 		.compatible = "rockchip,rv1106-rgb",
-		.data = (ulong)&rv1106_rgb_funcs,
+		.data = (ulong)&rv1106_rgb,
 	},
 	{
 		.compatible = "rockchip,rv1108-rgb",
 	},
 	{
 		.compatible = "rockchip,rv1126-rgb",
-		.data = (ulong)&rv1126_rgb_funcs,
+		.data = (ulong)&rv1126_rgb,
 	},
 	{}
 };

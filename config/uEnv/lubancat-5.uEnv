@@ -1,8 +1,8 @@
-overlays=rk3588-lubancat-5-hdmi0-overlay rk3588-lubancat-5-hdmi1-vp2-overlay
+overlays=rk3588-lubancat-5-hdmi0-vp0-overlay rk3588-lubancat-5-hdmi1-vp2-overlay
 
 # 正确的方法是将所有需要的设备树覆盖文件名列在一个overlays=后面，用空格分隔。例如：
 # 下面是为鲁班猫5使用两个覆盖层的示例:      
-# overlays=overlays=rk3588-lubancat-5-hdmi0-overlay rk3588-lubancat-5-hdmi1-vp2-overlay
+# overlays=overlays=rk3588-lubancat-5-hdmi1-vp0-overlay rk3588-lubancat-5-hdmi1-vp2-overlay
 
 #40pin
 # rk3588-lubancat-i2c3-m0-overlay
@@ -19,38 +19,43 @@ overlays=rk3588-lubancat-5-hdmi0-overlay rk3588-lubancat-5-hdmi1-vp2-overlay
 # rk3588-lubancat-pwm14-m2-overlay
 # rk3588-lubancat-pwm15-ir-m3-overlay
 
-# 8k插件，开启之后vp0的hdmi0或者hdmi1能输出8k
+# Display
+# 规则1.每个vp对应一个显示接口，同一个vp同时只能开启一个屏幕
+# 规则2.显示8K,同时占用vp0和vp1,还要开启hdmi0-8k设备树插件来配置时钟
+# 规则3.根据规则1和规则2,如果hdmi0设置为8k的话,dp0不能连接显示器,或者把dp0-disabled插件打开。
+## vp0
 # rk3588-lubancat-5-hdmi-8k-overlay
-
-# vp0 （插件只能同时开一个）
-# rk3588-lubancat-5-hdmi0-overlay
 # rk3588-lubancat-5-hdmi1-vp0-overlay
-
-# vp1 （默认配置为dp0开启，打开设备树则关闭dp显示）
-# rk3588-lubancat-5-dp0-disabled-overlay
-
-# vp2 （插件只能同时开一个）
+# rk3588-lubancat-5-hdmi0-vp0-overlay
+## vp1
+# rk3588-lubancat-5-dp0-vp1-disabled-overlay
+## vp2
 # rk3588-lubancat-5-hdmi1-vp2-overlay
-# rk3588-lubancat-5-edp-overlay
-# rk3588-lubancat-5-dsi0-1080p-overlay
-# rk3588-lubancat-5-dsi0-800x1280-overlay
-# rk3588-lubancat-5-dsi0-1024x600-overlay
+# rk3588-lubancat-5-dsi0-vp2-1080p-overlay
+# rk3588-lubancat-5-dsi0-vp2-1024x600-overlay
+# rk3588-lubancat-5-dsi0-vp2-800x1280-overlay
+# rk3588-lubancat-5-edp-vp2-overlay
+## vp3
+# rk3588-lubancat-5-dsi1-vp3-1080p-overlay
+# rk3588-lubancat-5-dsi1-vp3-1024x600-overlay
+# rk3588-lubancat-5-dsi1-vp3-800x1280-overlay
+# rk3588-lubancat-dsi1-vp3-virtual-screen-overlay
 
-# vp3 （插件只能同时开一个）
-# rk3588-lubancat-5-dsi1-1080p-overlay
-# rk3588-lubancat-5-dsi1-800x1280-overlay
-# rk3588-lubancat-5-dsi1-1024x600-overlay
-
-#cam0
+# cam0
 # rk3588-lubancat-5-cam0-imx415-overlay
-#cam1
+# rk3588-lubancat-5-cam0-imx415-1080p-overlay
+# cam1
 # rk3588-lubancat-5-cam1-imx415-overlay
-#cam2
-# rk3588-lubancat-5-cam2-ov8858-overlay
-#cam3
-# rk3588-lubancat-5-cam3-ov8858-overlay
-#cam4
-# rk3588-lubancat-5-cam4-ov8858-overlay
-#cam5
-# rk3588-lubancat-5-cam5-ov8858-overlay
-
+# rk3588-lubancat-5-cam1-imx415-1080p-overlay
+# cam2
+# rk3588-lubancat-5-cam2-imx415-overlay
+# rk3588-lubancat-5-cam2-imx415-1080p-overlay
+# cam3
+# rk3588-lubancat-5-cam3-imx415-overlay
+# rk3588-lubancat-5-cam3-imx415-1080p-overlay
+# cam4
+# rk3588-lubancat-5-cam4-imx415-overlay
+# rk3588-lubancat-5-cam4-imx415-1080p-overlay
+# cam5
+# rk3588-lubancat-5-cam5-imx415-overlay
+# rk3588-lubancat-5-cam5-imx415-1080p-overlay

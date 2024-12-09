@@ -39,8 +39,14 @@
 	};
 };
 
+&sfc {
+	u-boot,dm-pre-reloc;
+	status = "okay";
+};
+
 &emmc {
 	u-boot,dm-pre-reloc;
+	default-sample-phase = <0>;
 	status = "okay";
 };
 
